@@ -8,26 +8,36 @@ using Spectre.Console;
 namespace AzureChat;
 
 /// <summary>
-/// Interactive console UI for chatting with Azure OpenAI + optional RAG.
+/// Interactive console UI for chatting with Azure OpenAI + optional RAG,
+/// and for triggering the Blob→Cosmos ingestion pipeline.
 /// </summary>
 public sealed class ChatUi
 {
     private readonly IRagService _rag;
+    private readonly IIngestionPipelineService _ingestion;
     private readonly AzureOpenAIOptions _openAIOptions;
     private readonly AzureSearchOptions _searchOptions;
+    private readonly BlobStorageOptions _blobOptions;
+    private readonly CosmosDbOptions _cosmosOptions;
     private readonly ILogger<ChatUi> _logger;
 
     private readonly List<ChatMessage> _history = new();
 
     public ChatUi(
         IRagService rag,
+        IIngestionPipelineService ingestion,
         IOptions<AzureOpenAIOptions> openAIOptions,
         IOptions<AzureSearchOptions> searchOptions,
+        IOptions<BlobStorageOptions> blobOptions,
+        IOptions<CosmosDbOptions> cosmosOptions,
         ILogger<ChatUi> logger)
     {
         _rag = rag;
+        _ingestion = ingestion;
         _openAIOptions = openAIOptions.Value;
         _searchOptions = searchOptions.Value;
+        _blobOptions = blobOptions.Value;
+        _cosmosOptions = cosmosOptions.Value;
         _logger = logger;
     }
 
@@ -45,7 +55,7 @@ public sealed class ChatUi
             if (string.IsNullOrWhiteSpace(input))
                 continue;
 
-            if (TryHandleCommand(input))
+            if (await TryHandleCommandAsync(input, cancellationToken))
                 continue;
 
             await SendMessageAsync(input, cancellationToken);
@@ -97,7 +107,7 @@ public sealed class ChatUi
     }
 
     /// <summary>Returns true when <paramref name="input"/> was a UI command.</summary>
-    private bool TryHandleCommand(string input)
+    private async Task<bool> TryHandleCommandAsync(string input, CancellationToken cancellationToken)
     {
         switch (input.ToLowerInvariant())
         {
@@ -117,6 +127,10 @@ public sealed class ChatUi
 
             case "/rag":
                 AnsiConsole.MarkupLine($"[yellow]RAG is currently [bold]{(_rag.IsEnabled ? "ON" : "OFF")}[/].[/]");
+                return true;
+
+            case "/ingest":
+                await RunIngestionAsync(cancellationToken);
                 return true;
 
             case "/clear":
@@ -144,10 +158,55 @@ public sealed class ChatUi
         }
     }
 
+    private async Task RunIngestionAsync(CancellationToken cancellationToken)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(
+            $"[bold]Starting ingestion[/] from blob container [yellow]{Markup.Escape(_blobOptions.ContainerName.Length > 0 ? _blobOptions.ContainerName : "(not set)")}[/] → Cosmos DB [yellow]{Markup.Escape(_cosmosOptions.ContainerName.Length > 0 ? _cosmosOptions.ContainerName : "(not set)")}[/]");
+        AnsiConsole.WriteLine();
+
+        IngestionSummary summary;
+
+        try
+        {
+            summary = await AnsiConsole
+                .Progress()
+                .Columns(new TaskDescriptionColumn(), new SpinnerColumn())
+                .StartAsync(async ctx =>
+                {
+                    var task = ctx.AddTask("[bold]Ingesting blobs…[/]");
+                    var result = await _ingestion.RunAsync(cancellationToken);
+                    task.StopTask();
+                    return result;
+                });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ingestion pipeline error");
+            AnsiConsole.MarkupLine($"[bold red]Ingestion error:[/] {Markup.Escape(ex.Message)}");
+            AnsiConsole.WriteLine();
+            return;
+        }
+
+        AnsiConsole.MarkupLine($"[bold green]✔ Succeeded:[/] {summary.Succeeded}   [bold red]✘ Failed:[/] {summary.Failed}");
+
+        if (summary.Errors.Count > 0)
+        {
+            foreach (string error in summary.Errors)
+                AnsiConsole.MarkupLine($"  [red]•[/] {Markup.Escape(error)}");
+        }
+
+        AnsiConsole.WriteLine();
+    }
+
     private void RenderHeader()
     {
         AnsiConsole.Write(new FigletText("Azure Chat").Color(Color.SteelBlue1));
-        AnsiConsole.MarkupLine("[dim]Azure OpenAI + Azure AI Search (RAG)[/]");
+        AnsiConsole.MarkupLine("[dim]Azure OpenAI + Azure AI Search (RAG) + Blob→Cosmos Ingestion[/]");
         AnsiConsole.WriteLine();
     }
 
@@ -162,6 +221,8 @@ public sealed class ChatUi
         grid.AddRow("[bold]Search Endpoint[/]", Markup.Escape(_searchOptions.Endpoint.Length > 0 ? _searchOptions.Endpoint : "(not set)"));
         grid.AddRow("[bold]Search Index[/]", Markup.Escape(_searchOptions.IndexName.Length > 0 ? _searchOptions.IndexName : "(not set)"));
         grid.AddRow("[bold]RAG[/]", _rag.IsEnabled ? "[green]ON[/]" : "[red]OFF[/]");
+        grid.AddRow("[bold]Blob Container[/]", Markup.Escape(_blobOptions.ContainerName.Length > 0 ? _blobOptions.ContainerName : "(not set)"));
+        grid.AddRow("[bold]Cosmos Container[/]", Markup.Escape(_cosmosOptions.ContainerName.Length > 0 ? _cosmosOptions.ContainerName : "(not set)"));
 
         AnsiConsole.Write(new Panel(grid)
             .Header("[bold]Configuration[/]")
@@ -178,6 +239,7 @@ public sealed class ChatUi
 
         table.AddRow("/rag on|off", "Enable or disable Retrieval-Augmented Generation");
         table.AddRow("/rag", "Show current RAG status");
+        table.AddRow("/ingest", "Run Blob → Cosmos DB ingestion pipeline");
         table.AddRow("/clear", "Clear conversation history");
         table.AddRow("/config", "Show current configuration");
         table.AddRow("/help", "Show this help");

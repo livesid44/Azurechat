@@ -7,7 +7,8 @@ using Microsoft.Extensions.Logging;
 
 // Build configuration from appsettings.json + environment variables.
 // Environment variable overrides follow the convention:
-//   AzureOpenAI__Endpoint, AzureOpenAI__ApiKey, AzureSearch__Endpoint, etc.
+//   AzureOpenAI__Endpoint, AzureOpenAI__ApiKey, AzureSearch__Endpoint,
+//   BlobStorage__ConnectionString, CosmosDb__Endpoint, etc.
 IConfiguration configuration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
@@ -26,12 +27,17 @@ services.AddLogging(b =>
 services
     .Configure<AzureOpenAIOptions>(configuration.GetSection(AzureOpenAIOptions.SectionName))
     .Configure<AzureSearchOptions>(configuration.GetSection(AzureSearchOptions.SectionName))
-    .Configure<RagOptions>(configuration.GetSection(RagOptions.SectionName));
+    .Configure<RagOptions>(configuration.GetSection(RagOptions.SectionName))
+    .Configure<BlobStorageOptions>(configuration.GetSection(BlobStorageOptions.SectionName))
+    .Configure<CosmosDbOptions>(configuration.GetSection(CosmosDbOptions.SectionName));
 
 services
     .AddSingleton<ISearchService, SearchService>()
     .AddSingleton<IChatService, ChatService>()
     .AddSingleton<IRagService, RagService>()
+    .AddSingleton<IBlobIngestionService, BlobIngestionService>()
+    .AddSingleton<ICosmosDbService, CosmosDbService>()
+    .AddSingleton<IIngestionPipelineService, IngestionPipelineService>()
     .AddSingleton<ChatUi>();
 
 await using ServiceProvider serviceProvider = services.BuildServiceProvider();
