@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AzureChat/AzureChat.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AzureChat.Tests/AzureChat.Tests.csproj" />
+  </Folder>
+</Solution>

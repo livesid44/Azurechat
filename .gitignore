@@ -1,0 +1,19 @@
+# Build outputs
+bin/
+obj/
+
+# NuGet packages
+*.nupkg
+*.snupkg
+.nuget/
+
+# User-specific files
+*.user
+*.suo
+.vs/
+
+# dotnet publish output
+publish/
+
+# Environment override (may contain secrets)
+appsettings.local.json
