@@ -109,7 +109,7 @@ public class RagServiceTests
     }
 
     [Fact]
-    public async Task AskAsync_WhenRagEnabledButNoSources_UsesBarePQuestion()
+    public async Task AskAsync_WhenRagEnabledButNoSources_UsesBareQuestion()
     {
         var searchMock = new Mock<ISearchService>();
         searchMock.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
