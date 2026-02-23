@@ -1,7 +1,4 @@
-using AzureChat.Configuration;
 using AzureChat.Services;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace AzureChat.Tests.Services;
@@ -13,21 +10,15 @@ namespace AzureChat.Tests.Services;
 /// </summary>
 public class SearchServiceSelectFieldTests
 {
-    // Helper that calls the internal field-selection logic via reflection so we can
-    // test it without standing up a real Azure AI Search service.
+    // Helper that replicates the exact $select-building logic from SearchService.SearchAsync.
+    // Accepts all three configurable field names so the tests break if the implementation
+    // diverges from what is being tested.
     private static IReadOnlyList<string> GetSelectFields(
+        string keyField,
         string contentField,
         string titleField)
     {
-        var options = Options.Create(new AzureSearchOptions
-        {
-            ContentField = contentField,
-            TitleField = titleField,
-        });
-
-        // Replicate the exact logic from SearchService.SearchAsync so the test
-        // breaks if someone changes the implementation without updating the guard.
-        var fieldsToSelect = new[] { "id", contentField, titleField }
+        var fieldsToSelect = new[] { keyField, contentField, titleField }
             .Where(f => !string.IsNullOrWhiteSpace(f))
             .Distinct()
             .ToList();
@@ -35,24 +26,24 @@ public class SearchServiceSelectFieldTests
         return fieldsToSelect;
     }
 
+    // Convenience overload that uses the default KeyField so existing tests stay concise.
+    private static IReadOnlyList<string> GetSelectFields(string contentField, string titleField)
+        => GetSelectFields("id", contentField, titleField);
+
     [Fact]
     public void SelectFields_DefaultFieldNames_IncludesAllThree()
     {
-        // Arrange: default field names
-        var fields = GetSelectFields("content", "title");
+        var fields = GetSelectFields("chunk", "title");
 
-        // Assert: all three fields present, no duplicates
         Assert.Equal(3, fields.Count);
         Assert.Contains("id", fields);
-        Assert.Contains("content", fields);
+        Assert.Contains("chunk", fields);
         Assert.Contains("title", fields);
     }
 
     [Fact]
     public void SelectFields_EmptyContentField_OmitsContentFromSelect()
     {
-        // If content field is empty (not configured), it should NOT be in $select.
-        // Azure Search would 400 on an empty string or non-existent field name.
         var fields = GetSelectFields(string.Empty, "title");
 
         Assert.DoesNotContain(string.Empty, fields);
@@ -63,19 +54,17 @@ public class SearchServiceSelectFieldTests
     [Fact]
     public void SelectFields_EmptyTitleField_OmitsTitleFromSelect()
     {
-        var fields = GetSelectFields("content", string.Empty);
+        var fields = GetSelectFields("chunk", string.Empty);
 
         Assert.DoesNotContain(string.Empty, fields);
         Assert.Contains("id", fields);
-        Assert.Contains("content", fields);
+        Assert.Contains("chunk", fields);
     }
 
     [Fact]
-    public void SelectFields_BothFieldsEmpty_OnlyIdInSelect()
+    public void SelectFields_BothContentAndTitleEmpty_OnlyKeyFieldInSelect()
     {
-        // When neither content nor title field is configured, only "id" is selected.
-        // Azure Search returns all fields when the SDK Select collection is empty —
-        // but since "id" is always hardcoded we at least get a valid request.
+        // When neither content nor title field is configured, only the key field is selected.
         var fields = GetSelectFields(string.Empty, string.Empty);
 
         Assert.Single(fields);
@@ -87,7 +76,6 @@ public class SearchServiceSelectFieldTests
     {
         var fields = GetSelectFields("   ", "\t");
 
-        // Only "id" should remain
         Assert.Single(fields);
         Assert.Contains("id", fields);
     }
@@ -95,7 +83,6 @@ public class SearchServiceSelectFieldTests
     [Fact]
     public void SelectFields_CustomFieldNames_UsedVerbatim()
     {
-        // Users with non-default field names (e.g. "body", "name") should work.
         var fields = GetSelectFields("body", "documentName");
 
         Assert.Equal(3, fields.Count);
@@ -107,7 +94,6 @@ public class SearchServiceSelectFieldTests
     [Fact]
     public void SelectFields_DuplicateFieldName_DeduplicatedInSelect()
     {
-        // If titleField and contentField happen to be the same, no duplicates.
         var fields = GetSelectFields("text", "text");
 
         Assert.Equal(2, fields.Count); // "id" + "text"
@@ -116,13 +102,26 @@ public class SearchServiceSelectFieldTests
     }
 
     [Fact]
-    public void SelectFields_IdNotDuplicated_WhenUserNamesFieldId()
+    public void SelectFields_KeyFieldSameAsContentField_NoDuplication()
     {
-        // If someone sets contentField = "id", Distinct() should prevent duplication.
-        var fields = GetSelectFields("id", "title");
+        // If someone sets keyField = "id" and contentField = "id", Distinct() prevents duplication.
+        var fields = GetSelectFields(keyField: "id", contentField: "id", titleField: "title");
 
         Assert.Equal(2, fields.Count); // "id" and "title" only
         Assert.Contains("id", fields);
         Assert.Contains("title", fields);
+    }
+
+    [Fact]
+    public void SelectFields_CustomKeyField_UsedInsteadOfId()
+    {
+        // Indexes that use a key field other than "id" must be supported.
+        var fields = GetSelectFields(keyField: "docKey", contentField: "chunk", titleField: "title");
+
+        Assert.Equal(3, fields.Count);
+        Assert.Contains("docKey", fields);
+        Assert.Contains("chunk", fields);
+        Assert.Contains("title", fields);
+        Assert.DoesNotContain("id", fields);
     }
 }

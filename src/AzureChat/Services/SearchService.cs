@@ -64,6 +64,12 @@ public sealed class SearchService : ISearchService
         string query,
         CancellationToken cancellationToken = default)
     {
+        // Log active configuration once per search so a stale/wrong config is immediately
+        // visible in the console without needing to look at appsettings.json.
+        _logger.LogInformation(
+            "Search → index: '{Index}', KeyField: '{Key}', ContentField: '{Content}', TitleField: '{Title}'",
+            _options.IndexName, _options.KeyField, _options.ContentField, _options.TitleField);
+
         var searchOptions = new SearchOptions
         {
             Size = _options.TopK,
@@ -71,10 +77,7 @@ public sealed class SearchService : ISearchService
         };
 
         // Only add field names to $select that are explicitly configured and non-empty.
-        // Omitting $select entirely causes Azure AI Search to return all fields, which
-        // avoids a 400 "property not found" error when the index schema uses different
-        // field names than the defaults.
-        var fieldsToSelect = new[] { "id", _options.ContentField, _options.TitleField }
+        var fieldsToSelect = new[] { _options.KeyField, _options.ContentField, _options.TitleField }
             .Where(f => !string.IsNullOrWhiteSpace(f))
             .Distinct()
             .ToList();
@@ -82,18 +85,36 @@ public sealed class SearchService : ISearchService
         foreach (string field in fieldsToSelect)
             searchOptions.Select.Add(field);
 
-        _logger.LogDebug("Searching index '{Index}' for: {Query}", _options.IndexName, query);
+        Response<SearchResults<SearchDocument>> response;
+        try
+        {
+            response = await GetClient().SearchAsync<SearchDocument>(query, searchOptions, cancellationToken);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 400)
+        {
+            // Azure AI Search returns 400 when a field in $select doesn't exist in the index.
+            // Recover by retrying without $select (returns all fields) so the user can still chat,
+            // and log a clear message that tells them exactly how to fix the config.
+            _logger.LogWarning(
+                ex,
+                "Azure AI Search returned 400 — one or more $select fields [{Fields}] do not exist " +
+                "in index '{Index}'. Retrying without $select (all fields returned). " +
+                "Fix: open the ⚙ config panel → 'Discover index fields' and update " +
+                "ContentField / TitleField / KeyField in appsettings.json.",
+                string.Join(", ", fieldsToSelect),
+                _options.IndexName);
 
-        Response<SearchResults<SearchDocument>> response =
-            await GetClient().SearchAsync<SearchDocument>(query, searchOptions, cancellationToken);
+            searchOptions.Select.Clear();
+            response = await GetClient().SearchAsync<SearchDocument>(query, searchOptions, cancellationToken);
+        }
 
         var results = new List<SearchResult>();
         await foreach (SearchResult<SearchDocument> hit in response.Value.GetResultsAsync())
         {
-            string id = hit.Document.TryGetValue("id", out object? idVal) ? idVal?.ToString() ?? string.Empty : string.Empty;
-            string title = hit.Document.TryGetValue(_options.TitleField, out object? titleVal) ? titleVal?.ToString() ?? string.Empty : string.Empty;
-            string content = hit.Document.TryGetValue(_options.ContentField, out object? contentVal) ? contentVal?.ToString() ?? string.Empty : string.Empty;
-            double score = hit.Score ?? 0;
+            string id      = hit.Document.TryGetValue(_options.KeyField,      out object? idVal)      ? idVal?.ToString()      ?? string.Empty : string.Empty;
+            string title   = hit.Document.TryGetValue(_options.TitleField,    out object? titleVal)   ? titleVal?.ToString()   ?? string.Empty : string.Empty;
+            string content = hit.Document.TryGetValue(_options.ContentField,  out object? contentVal) ? contentVal?.ToString() ?? string.Empty : string.Empty;
+            double score   = hit.Score ?? 0;
 
             results.Add(new SearchResult(id, title, content, score));
         }

@@ -29,6 +29,12 @@ public sealed class AzureSearchOptions
     /// <summary>Name of the field used as the document title / source reference.</summary>
     public string TitleField { get; set; } = "title";
 
+    /// <summary>
+    /// Name of the document key field.  Azure AI Studio indexes use "id"; other indexes may differ.
+    /// Use the ⚙ config panel → "Discover index fields" button if documents always return an empty id.
+    /// </summary>
+    public string KeyField { get; set; } = "id";
+
     /// <summary>Number of nearest-neighbour results to retrieve from the vector search.</summary>
     public int TopK { get; set; } = 3;
 }

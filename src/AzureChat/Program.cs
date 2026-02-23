@@ -67,6 +67,7 @@ app.MapGet("/api/config", (
         {
             endpoint = search.Value.Endpoint,
             indexName = search.Value.IndexName,
+            keyField = search.Value.KeyField,
             contentField = search.Value.ContentField,
             titleField = search.Value.TitleField,
             configured = !string.IsNullOrWhiteSpace(search.Value.Endpoint)

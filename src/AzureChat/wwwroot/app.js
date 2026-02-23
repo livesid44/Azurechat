@@ -51,6 +51,7 @@ function renderConfig(cfg) {
     <h6 class="text-uppercase text-muted mb-2">Azure AI Search</h6>
     ${row('Endpoint', cfg.search.endpoint, cfg.search.configured)}
     ${row('Index', cfg.search.indexName)}
+    ${row('Key field', cfg.search.keyField)}
     ${row('Content field', cfg.search.contentField)}
     ${row('Title field', cfg.search.titleField)}
     <div class="mt-2 mb-1">
