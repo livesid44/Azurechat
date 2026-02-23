@@ -1,0 +1,19 @@
+{
+  "name": "AzureChat",
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": {
+      "label": "AzureChat Web",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postCreateCommand": "dotnet restore AzureChat.slnx",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.csdevkit"
+      ]
+    }
+  }
+}

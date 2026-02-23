@@ -1,15 +1,15 @@
 # AzureChat
 
-A simple .NET 8 console application that connects with **Azure OpenAI** and **Azure AI Search** to provide an interactive chatbot with optional **Retrieval-Augmented Generation (RAG)**, plus a **Blob → Cosmos DB ingestion pipeline** to populate the search index source data.
+A .NET 8 **web application** that connects with **Azure OpenAI** and **Azure AI Search** to provide a browser-based chatbot with optional **Retrieval-Augmented Generation (RAG)**, plus a **Blob → Cosmos DB ingestion pipeline** to populate the search index source data.
 
 ## Features
 
-- Interactive console chat interface powered by [Spectre.Console](https://spectreconsole.net/)
+- **Browser-based chat UI** — served at `http://localhost:8080`, works in VS Code / GitHub Codespaces
 - Azure OpenAI chat completions (GPT-4o or any deployed model)
 - Azure AI Search document retrieval for RAG grounding
-- Toggle RAG on/off at runtime without restarting
+- Toggle RAG on/off at runtime from the top navigation bar
 - Conversation history maintained for multi-turn dialogue
-- Sources table displayed when RAG retrieves documents
+- Sources displayed under each RAG-grounded response
 - **Blob → Cosmos DB ingestion pipeline** — reads text files from Azure Blob Storage, chunks them, and upserts structured JSON documents into Azure Cosmos DB for Search indexing
 - Full configuration via `appsettings.json` or environment variables
 
@@ -17,8 +17,14 @@ A simple .NET 8 console application that connects with **Azure OpenAI** and **Az
 
 ```
 AzureChat.slnx
-├── src/AzureChat/                      # Console application
-│   ├── Configuration/                  # Options classes
+├── .devcontainer/devcontainer.json       # Codespaces port-forward config
+├── src/AzureChat/                        # ASP.NET Core web application
+│   ├── Properties/launchSettings.json   # Default port 8080
+│   ├── wwwroot/                          # Static web UI (served at /)
+│   │   ├── index.html
+│   │   ├── app.js
+│   │   └── app.css
+│   ├── Configuration/                    # Options classes
 │   │   ├── AzureOpenAIOptions.cs
 │   │   ├── AzureSearchOptions.cs
 │   │   ├── RagOptions.cs
@@ -143,7 +149,7 @@ export AzureSearch__Endpoint="https://<your-resource>.search.windows.net"
 export AzureSearch__ApiKey="<your-key>"
 export AzureSearch__IndexName="<your-index>"
 
-# Blob → Cosmos ingestion
+# Blob → Cosmos ingestion (optional)
 export BlobStorage__ConnectionString="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
 export BlobStorage__ContainerName="documents"
 export CosmosDb__Endpoint="https://<your-account>.documents.azure.com:443/"
@@ -154,18 +160,29 @@ export CosmosDb__ContainerName="documents"
 dotnet run
 ```
 
-## Chat commands
+Then open **http://localhost:8080** in your browser.
 
-| Command | Description |
+In **GitHub Codespaces / VS Code Dev Containers**, the port is automatically forwarded — the browser will open automatically once the server starts.
+
+## Web UI
+
+| Action | How |
 |---|---|
-| `/rag on` | Enable RAG document retrieval |
-| `/rag off` | Disable RAG (model knowledge only) |
-| `/rag` | Show current RAG status |
-| `/ingest` | Run Blob → Cosmos DB ingestion pipeline |
-| `/clear` | Clear conversation history |
-| `/config` | Show active configuration |
-| `/help` | Show command list |
-| `/exit` | Quit |
+| Send a message | Type in the box and press **Enter** |
+| Toggle RAG | Flip the **RAG** switch in the top bar |
+| Run Blob → Cosmos ingestion | Click **Ingest** in the top bar |
+| View configuration | Click the **⚙** gear icon |
+| Clear conversation | Click **Clear** in the top bar |
+
+## REST API
+
+| Endpoint | Description |
+|---|---|
+| `GET  /api/config` | Current configuration (API keys omitted) |
+| `GET  /api/rag` | RAG enabled/disabled status |
+| `POST /api/rag` | Toggle RAG (`{"enabled": true/false}`) |
+| `POST /api/chat` | Send a message (`{"message":"…","history":[…]}`) |
+| `POST /api/ingest` | Run Blob → Cosmos DB ingestion pipeline |
 
 ## Running the tests
 

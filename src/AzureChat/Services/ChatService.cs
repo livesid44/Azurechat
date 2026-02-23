@@ -15,20 +15,26 @@ namespace AzureChat.Services;
 /// </summary>
 public sealed class ChatService : IChatService
 {
-    private readonly ChatClient _chatClient;
     private readonly AzureOpenAIOptions _options;
     private readonly ILogger<ChatService> _logger;
+
+    // Lazily initialised — avoids URI exceptions when credentials are not yet configured.
+    private ChatClient? _chatClient;
 
     public ChatService(IOptions<AzureOpenAIOptions> options, ILogger<ChatService> logger)
     {
         _options = options.Value;
         _logger = logger;
+    }
 
+    private ChatClient GetChatClient()
+    {
+        if (_chatClient is not null) return _chatClient;
         AzureOpenAIClient azureClient = new(
             new Uri(_options.Endpoint),
             new ApiKeyCredential(_options.ApiKey));
-
         _chatClient = azureClient.GetChatClient(_options.DeploymentName);
+        return _chatClient;
     }
 
     /// <inheritdoc/>
@@ -56,7 +62,7 @@ public sealed class ChatService : IChatService
 
         _logger.LogDebug("Requesting chat completion for {MessageCount} messages", messages.Count);
 
-        ClientResult<ChatCompletion> result = await _chatClient.CompleteChatAsync(
+        ClientResult<ChatCompletion> result = await GetChatClient().CompleteChatAsync(
             messages, completionOptions, cancellationToken);
 
         string reply = result.Value.Content[0].Text;

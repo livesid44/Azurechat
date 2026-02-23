@@ -15,20 +15,23 @@ namespace AzureChat.Services;
 /// </summary>
 public sealed class SearchService : ISearchService
 {
-    private readonly SearchClient _client;
     private readonly AzureSearchOptions _options;
     private readonly ILogger<SearchService> _logger;
+
+    // Lazily initialised — avoids URI exceptions when credentials are not yet configured.
+    private SearchClient? _client;
 
     public SearchService(IOptions<AzureSearchOptions> options, ILogger<SearchService> logger)
     {
         _options = options.Value;
         _logger = logger;
+    }
 
-        _client = new SearchClient(
+    private SearchClient GetClient() =>
+        _client ??= new SearchClient(
             new Uri(_options.Endpoint),
             _options.IndexName,
             new AzureKeyCredential(_options.ApiKey));
-    }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<SearchResult>> SearchAsync(
@@ -45,7 +48,7 @@ public sealed class SearchService : ISearchService
         _logger.LogDebug("Searching index '{Index}' for: {Query}", _options.IndexName, query);
 
         Response<SearchResults<SearchDocument>> response =
-            await _client.SearchAsync<SearchDocument>(query, searchOptions, cancellationToken);
+            await GetClient().SearchAsync<SearchDocument>(query, searchOptions, cancellationToken);
 
         var results = new List<SearchResult>();
         await foreach (SearchResult<SearchDocument> hit in response.Value.GetResultsAsync())
