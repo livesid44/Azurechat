@@ -59,61 +59,73 @@ public sealed class SearchService : ISearchService
         return IndexFieldRecommender.Annotate(rawFields);
     }
 
+    // Ordered fallback aliases used when TryGetValue with the configured field name fails.
+    // This lets search work even when the user hasn't updated appsettings.json yet.
+    private static readonly string[] ContentAliases =
+        ["chunk", "content", "text", "body", "description", "passage", "page_content"];
+
+    private static readonly string[] TitleAliases =
+        ["title", "name", "source", "filename", "filepath", "heading", "subject"];
+
+    private static readonly string[] KeyAliases =
+        ["id", "chunk_id", "document_id", "doc_id", "metadata_storage_path"];
+
+    /// <summary>
+    /// Tries the configured field name first, then falls back through <paramref name="aliases"/>
+    /// until a non-empty string value is found. Returns <see cref="string.Empty"/> if nothing matches.
+    /// </summary>
+    private static string TryExtractField(
+        SearchDocument doc,
+        string configuredField,
+        string[] aliases)
+    {
+        // Try the explicitly configured field first.
+        if (!string.IsNullOrWhiteSpace(configuredField) &&
+            doc.TryGetValue(configuredField, out object? val) &&
+            val?.ToString() is string s && s.Length > 0)
+            return s;
+
+        // Fall through the alias list in priority order.
+        foreach (string alias in aliases)
+        {
+            if (alias == configuredField) continue; // already tried
+            if (doc.TryGetValue(alias, out object? v) &&
+                v?.ToString() is string a && a.Length > 0)
+                return a;
+        }
+
+        return string.Empty;
+    }
+
     /// <inheritdoc/>
     public async Task<IReadOnlyList<SearchResult>> SearchAsync(
         string query,
         CancellationToken cancellationToken = default)
     {
-        // Log active configuration once per search so a stale/wrong config is immediately
-        // visible in the console without needing to look at appsettings.json.
+        // Log active field configuration so stale settings are immediately visible in the console.
         _logger.LogInformation(
             "Search → index: '{Index}', KeyField: '{Key}', ContentField: '{Content}', TitleField: '{Title}'",
             _options.IndexName, _options.KeyField, _options.ContentField, _options.TitleField);
 
+        // Do NOT populate searchOptions.Select — omitting $select tells Azure AI Search to
+        // return all retrievable fields, which works with any index schema without any 400 errors.
         var searchOptions = new SearchOptions
         {
             Size = _options.TopK,
             IncludeTotalCount = false,
         };
 
-        // Only add field names to $select that are explicitly configured and non-empty.
-        var fieldsToSelect = new[] { _options.KeyField, _options.ContentField, _options.TitleField }
-            .Where(f => !string.IsNullOrWhiteSpace(f))
-            .Distinct()
-            .ToList();
-
-        foreach (string field in fieldsToSelect)
-            searchOptions.Select.Add(field);
-
-        Response<SearchResults<SearchDocument>> response;
-        try
-        {
-            response = await GetClient().SearchAsync<SearchDocument>(query, searchOptions, cancellationToken);
-        }
-        catch (RequestFailedException ex) when (ex.Status == 400)
-        {
-            // Azure AI Search returns 400 when a field in $select doesn't exist in the index.
-            // Recover by retrying without $select (returns all fields) so the user can still chat,
-            // and log a clear message that tells them exactly how to fix the config.
-            _logger.LogWarning(
-                ex,
-                "Azure AI Search returned 400 — one or more $select fields [{Fields}] do not exist " +
-                "in index '{Index}'. Retrying without $select (all fields returned). " +
-                "Fix: open the ⚙ config panel → 'Discover index fields' and update " +
-                "ContentField / TitleField / KeyField in appsettings.json.",
-                string.Join(", ", fieldsToSelect),
-                _options.IndexName);
-
-            searchOptions.Select.Clear();
-            response = await GetClient().SearchAsync<SearchDocument>(query, searchOptions, cancellationToken);
-        }
+        Response<SearchResults<SearchDocument>> response =
+            await GetClient().SearchAsync<SearchDocument>(query, searchOptions, cancellationToken);
 
         var results = new List<SearchResult>();
         await foreach (SearchResult<SearchDocument> hit in response.Value.GetResultsAsync())
         {
-            string id      = hit.Document.TryGetValue(_options.KeyField,      out object? idVal)      ? idVal?.ToString()      ?? string.Empty : string.Empty;
-            string title   = hit.Document.TryGetValue(_options.TitleField,    out object? titleVal)   ? titleVal?.ToString()   ?? string.Empty : string.Empty;
-            string content = hit.Document.TryGetValue(_options.ContentField,  out object? contentVal) ? contentVal?.ToString() ?? string.Empty : string.Empty;
+            // Use configured field names with automatic fallback aliases so extraction
+            // works even when appsettings.json hasn't been updated yet.
+            string id      = TryExtractField(hit.Document, _options.KeyField,     KeyAliases);
+            string title   = TryExtractField(hit.Document, _options.TitleField,   TitleAliases);
+            string content = TryExtractField(hit.Document, _options.ContentField, ContentAliases);
             double score   = hit.Score ?? 0;
 
             results.Add(new SearchResult(id, title, content, score));

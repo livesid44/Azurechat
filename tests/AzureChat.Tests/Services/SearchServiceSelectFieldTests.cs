@@ -1,127 +1,148 @@
+using Azure.Search.Documents.Models;
 using AzureChat.Services;
 using Xunit;
 
 namespace AzureChat.Tests.Services;
 
 /// <summary>
-/// Tests for the SearchService $select field-name handling.
-/// These validate the logic that builds the field list before calling Azure AI Search,
-/// which was the source of the "property not found" HTTP 400 error.
+/// Tests for SearchService's field-extraction fallback behaviour.
+/// The service never sends $select so it cannot get a 400 from field name mismatches;
+/// these tests verify that TryExtractField returns the right value regardless of
+/// whether the configured field name matches the actual index schema.
 /// </summary>
 public class SearchServiceSelectFieldTests
 {
-    // Helper that replicates the exact $select-building logic from SearchService.SearchAsync.
-    // Accepts all three configurable field names so the tests break if the implementation
-    // diverges from what is being tested.
-    private static IReadOnlyList<string> GetSelectFields(
-        string keyField,
-        string contentField,
-        string titleField)
-    {
-        var fieldsToSelect = new[] { keyField, contentField, titleField }
-            .Where(f => !string.IsNullOrWhiteSpace(f))
-            .Distinct()
-            .ToList();
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
-        return fieldsToSelect;
+    private static readonly string[] ContentAliases =
+        ["chunk", "content", "text", "body", "description", "passage", "page_content"];
+
+    private static readonly string[] TitleAliases =
+        ["title", "name", "source", "filename", "filepath", "heading", "subject"];
+
+    private static readonly string[] KeyAliases =
+        ["id", "chunk_id", "document_id", "doc_id", "metadata_storage_path"];
+
+    /// <summary>Replicates the internal TryExtractField logic from SearchService.</summary>
+    private static string TryExtractField(
+        IDictionary<string, object> doc,
+        string configuredField,
+        string[] aliases)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredField) &&
+            doc.TryGetValue(configuredField, out object? val) &&
+            val?.ToString() is string s && s.Length > 0)
+            return s;
+
+        foreach (string alias in aliases)
+        {
+            if (alias == configuredField) continue;
+            if (doc.TryGetValue(alias, out object? v) &&
+                v?.ToString() is string a && a.Length > 0)
+                return a;
+        }
+
+        return string.Empty;
     }
 
-    // Convenience overload that uses the default KeyField so existing tests stay concise.
-    private static IReadOnlyList<string> GetSelectFields(string contentField, string titleField)
-        => GetSelectFields("id", contentField, titleField);
+    private static Dictionary<string, object> Doc(params (string key, string value)[] fields) =>
+        fields.ToDictionary(f => f.key, f => (object)f.value);
+
+    // ── Content field extraction ──────────────────────────────────────────────
 
     [Fact]
-    public void SelectFields_DefaultFieldNames_IncludesAllThree()
+    public void TryExtractField_ConfiguredFieldPresent_ReturnsIt()
     {
-        var fields = GetSelectFields("chunk", "title");
-
-        Assert.Equal(3, fields.Count);
-        Assert.Contains("id", fields);
-        Assert.Contains("chunk", fields);
-        Assert.Contains("title", fields);
-    }
-
-    [Fact]
-    public void SelectFields_EmptyContentField_OmitsContentFromSelect()
-    {
-        var fields = GetSelectFields(string.Empty, "title");
-
-        Assert.DoesNotContain(string.Empty, fields);
-        Assert.Contains("id", fields);
-        Assert.Contains("title", fields);
-    }
-
-    [Fact]
-    public void SelectFields_EmptyTitleField_OmitsTitleFromSelect()
-    {
-        var fields = GetSelectFields("chunk", string.Empty);
-
-        Assert.DoesNotContain(string.Empty, fields);
-        Assert.Contains("id", fields);
-        Assert.Contains("chunk", fields);
+        var doc = Doc(("chunk", "hello world"));
+        Assert.Equal("hello world", TryExtractField(doc, "chunk", ContentAliases));
     }
 
     [Fact]
-    public void SelectFields_BothContentAndTitleEmpty_OnlyKeyFieldInSelect()
+    public void TryExtractField_ConfiguredFieldWrong_FallsBackToAlias()
     {
-        // When neither content nor title field is configured, only the key field is selected.
-        var fields = GetSelectFields(string.Empty, string.Empty);
-
-        Assert.Single(fields);
-        Assert.Contains("id", fields);
+        // Config says "content" but index uses "chunk" — fallback should find it.
+        var doc = Doc(("chunk", "fallback text"));
+        Assert.Equal("fallback text", TryExtractField(doc, "content", ContentAliases));
     }
 
     [Fact]
-    public void SelectFields_WhitespaceFieldNames_OmittedFromSelect()
+    public void TryExtractField_ConfiguredFieldEmpty_FallsBackToFirstAlias()
     {
-        var fields = GetSelectFields("   ", "\t");
-
-        Assert.Single(fields);
-        Assert.Contains("id", fields);
+        var doc = Doc(("chunk", "alias text"));
+        Assert.Equal("alias text", TryExtractField(doc, string.Empty, ContentAliases));
     }
 
     [Fact]
-    public void SelectFields_CustomFieldNames_UsedVerbatim()
+    public void TryExtractField_NoMatchingField_ReturnsEmpty()
     {
-        var fields = GetSelectFields("body", "documentName");
-
-        Assert.Equal(3, fields.Count);
-        Assert.Contains("id", fields);
-        Assert.Contains("body", fields);
-        Assert.Contains("documentName", fields);
+        var doc = Doc(("vector", "some binary data"));
+        Assert.Equal(string.Empty, TryExtractField(doc, "content", ContentAliases));
     }
 
     [Fact]
-    public void SelectFields_DuplicateFieldName_DeduplicatedInSelect()
+    public void TryExtractField_ConfiguredFieldHasEmptyValue_FallsBackToAlias()
     {
-        var fields = GetSelectFields("text", "text");
+        // Configured field exists but is empty — should fall through to alias.
+        var doc = Doc(("content", ""), ("chunk", "actual content"));
+        Assert.Equal("actual content", TryExtractField(doc, "content", ContentAliases));
+    }
 
-        Assert.Equal(2, fields.Count); // "id" + "text"
-        Assert.Contains("id", fields);
-        Assert.Contains("text", fields);
+    // ── Title field extraction ────────────────────────────────────────────────
+
+    [Fact]
+    public void TryExtractField_TitleFieldPresent_ReturnsIt()
+    {
+        var doc = Doc(("title", "My Document"));
+        Assert.Equal("My Document", TryExtractField(doc, "title", TitleAliases));
     }
 
     [Fact]
-    public void SelectFields_KeyFieldSameAsContentField_NoDuplication()
+    public void TryExtractField_TitleFieldWrong_FallsBackToName()
     {
-        // If someone sets keyField = "id" and contentField = "id", Distinct() prevents duplication.
-        var fields = GetSelectFields(keyField: "id", contentField: "id", titleField: "title");
-
-        Assert.Equal(2, fields.Count); // "id" and "title" only
-        Assert.Contains("id", fields);
-        Assert.Contains("title", fields);
+        // Config says "title" but index uses "name".
+        var doc = Doc(("name", "doc name"));
+        Assert.Equal("doc name", TryExtractField(doc, "title", TitleAliases));
     }
 
     [Fact]
-    public void SelectFields_CustomKeyField_UsedInsteadOfId()
+    public void TryExtractField_TitleFieldWrong_FallsBackToSource()
     {
-        // Indexes that use a key field other than "id" must be supported.
-        var fields = GetSelectFields(keyField: "docKey", contentField: "chunk", titleField: "title");
+        var doc = Doc(("source", "doc-source.pdf"));
+        Assert.Equal("doc-source.pdf", TryExtractField(doc, "title", TitleAliases));
+    }
 
-        Assert.Equal(3, fields.Count);
-        Assert.Contains("docKey", fields);
-        Assert.Contains("chunk", fields);
-        Assert.Contains("title", fields);
-        Assert.DoesNotContain("id", fields);
+    // ── Key field extraction ──────────────────────────────────────────────────
+
+    [Fact]
+    public void TryExtractField_KeyFieldId_ReturnsIt()
+    {
+        var doc = Doc(("id", "abc123"));
+        Assert.Equal("abc123", TryExtractField(doc, "id", KeyAliases));
+    }
+
+    [Fact]
+    public void TryExtractField_KeyFieldChunkId_FallsBack()
+    {
+        // Index uses "chunk_id" but KeyField is still default "id".
+        var doc = Doc(("chunk_id", "xyz789"));
+        Assert.Equal("xyz789", TryExtractField(doc, "id", KeyAliases));
+    }
+
+    [Fact]
+    public void TryExtractField_MetadataStoragePath_FallsBack()
+    {
+        // Azure AI Studio sometimes uses "metadata_storage_path" as the key.
+        var doc = Doc(("metadata_storage_path", "/container/file.txt"));
+        Assert.Equal("/container/file.txt", TryExtractField(doc, "id", KeyAliases));
+    }
+
+    // ── Priority: configured field wins over alias even if alias comes first ──
+
+    [Fact]
+    public void TryExtractField_ConfiguredFieldHasPriorityOverAlias()
+    {
+        // Both "content" and "chunk" are present; configured = "content" should win.
+        var doc = Doc(("content", "from content"), ("chunk", "from chunk"));
+        Assert.Equal("from content", TryExtractField(doc, "content", ContentAliases));
     }
 }
