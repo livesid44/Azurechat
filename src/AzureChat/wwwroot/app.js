@@ -76,8 +76,11 @@ function renderConfig(cfg) {
     <hr class="my-2"/>
 
     <p class="text-muted mt-2 mb-0">
-      Set values via environment variables, e.g.<br/>
-      <code>AzureOpenAI__Endpoint</code>, <code>AzureOpenAI__ApiKey</code>
+      Edit <code>src/AzureChat/appsettings.json</code> or set environment variables
+      (use <code>__</code> as the section separator), e.g.:<br/>
+      <code>AzureSearch__ContentField=chunk</code><br/>
+      <code>AzureSearch__TitleField=title</code><br/>
+      <small>Use <strong>Discover index fields</strong> above to find the correct names for your index.</small>
     </p>`;
 }
 

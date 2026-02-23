@@ -110,10 +110,45 @@ Edit `src/AzureChat/appsettings.json` or set the corresponding **environment var
 | `AzureSearch:Endpoint` | `AzureSearch__Endpoint` | Azure AI Search endpoint URL |
 | `AzureSearch:ApiKey` | `AzureSearch__ApiKey` | Azure AI Search API key |
 | `AzureSearch:IndexName` | `AzureSearch__IndexName` | Name of the search index |
-| `AzureSearch:ContentField` | `AzureSearch__ContentField` | Index field holding text (default: `content`) |
+| `AzureSearch:ContentField` | `AzureSearch__ContentField` | Index field holding text (default: `chunk`) |
 | `AzureSearch:TitleField` | `AzureSearch__TitleField` | Index field holding the title (default: `title`) |
 | `AzureSearch:TopK` | `AzureSearch__TopK` | Number of documents to retrieve (default: `3`) |
 | `Rag:EnabledByDefault` | `Rag__EnabledByDefault` | Start with RAG on or off (default: `true`) |
+
+### Configuring field names (`ContentField` / `TitleField`)
+
+The `ContentField` and `TitleField` values **must match the actual field names in your Azure AI Search index**.  
+Different index creation tools use different names:
+
+| How the index was created | ContentField | TitleField |
+|---|---|---|
+| Azure AI Studio / "Import and vectorize data" | `chunk` | `title` |
+| Azure OpenAI "Add your data" wizard | `content` | `title` |
+| Custom / Cosmos DB integrated | varies | varies |
+
+**To find your values without guessing:**
+1. Start the app → click the **⚙** gear icon (top right)
+2. Click **"Discover index fields…"**
+3. The panel shows every field in your index and highlights the best suggestions
+
+**To apply the values**, edit `src/AzureChat/appsettings.json`:
+
+```json
+"AzureSearch": {
+  "Endpoint": "https://<your-resource>.search.windows.net",
+  "ApiKey":   "<your-api-key>",
+  "IndexName": "<your-index-name>",
+  "ContentField": "chunk",
+  "TitleField":   "title"
+}
+```
+
+Or set environment variables (no restart needed in dev mode):
+
+```bash
+export AzureSearch__ContentField="chunk"
+export AzureSearch__TitleField="title"
+```
 
 ### Azure Blob Storage (ingestion source)
 

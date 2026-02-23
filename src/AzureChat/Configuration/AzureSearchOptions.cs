@@ -16,8 +16,12 @@ public sealed class AzureSearchOptions
     /// <summary>Name of the search index that holds document embeddings.</summary>
     public string IndexName { get; set; } = string.Empty;
 
-    /// <summary>Name of the field that contains the document text content.</summary>
-    public string ContentField { get; set; } = "content";
+    /// <summary>
+    /// Name of the field that contains the document text content.
+    /// Azure AI Studio indexes typically use "chunk"; custom indexes may use "content" or another name.
+    /// Use the ⚙ config panel → "Discover index fields" button to find the correct value.
+    /// </summary>
+    public string ContentField { get; set; } = "chunk";
 
     /// <summary>Name of the field that contains the vector embedding.</summary>
     public string VectorField { get; set; } = "contentVector";
