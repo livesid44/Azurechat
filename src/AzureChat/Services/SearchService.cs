@@ -70,6 +70,13 @@ public sealed class SearchService : ISearchService
     private static readonly string[] KeyAliases =
         ["id", "chunk_id", "document_id", "doc_id", "metadata_storage_path"];
 
+    // Aliases for the blob source path — used to generate a download link for each result.
+    // "source" is the standard field name in Azure AI Studio RAG indexes.
+    // "sourceBlob" is used by the app's own ingestion pipeline.
+    // "metadata_storage_path" is the base64-encoded blob URL emitted by the Azure AI Search indexer.
+    private static readonly string[] SourcePathAliases =
+        ["source", "sourceBlob", "metadata_storage_path", "filepath", "file_path", "url", "blobUrl"];
+
     /// <summary>
     /// Tries the configured field name first, then falls back through <paramref name="aliases"/>
     /// until a non-empty string value is found. Returns <see cref="string.Empty"/> if nothing matches.
@@ -123,12 +130,13 @@ public sealed class SearchService : ISearchService
         {
             // Use configured field names with automatic fallback aliases so extraction
             // works even when appsettings.json hasn't been updated yet.
-            string id      = TryExtractField(hit.Document, _options.KeyField,     KeyAliases);
-            string title   = TryExtractField(hit.Document, _options.TitleField,   TitleAliases);
-            string content = TryExtractField(hit.Document, _options.ContentField, ContentAliases);
-            double score   = hit.Score ?? 0;
+            string id         = TryExtractField(hit.Document, _options.KeyField,     KeyAliases);
+            string title      = TryExtractField(hit.Document, _options.TitleField,   TitleAliases);
+            string content    = TryExtractField(hit.Document, _options.ContentField, ContentAliases);
+            string sourcePath = TryExtractField(hit.Document, string.Empty,          SourcePathAliases);
+            double score      = hit.Score ?? 0;
 
-            results.Add(new SearchResult(id, title, content, score));
+            results.Add(new SearchResult(id, title, content, score, sourcePath));
         }
 
         _logger.LogDebug("Search returned {Count} result(s)", results.Count);

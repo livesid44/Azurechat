@@ -15,11 +15,20 @@ public sealed class SearchResult
     /// <summary>Relevance score returned by the search index.</summary>
     public double Score { get; init; }
 
-    public SearchResult(string id, string title, string content, double score)
+    /// <summary>
+    /// Blob path or URL for the source document — used to generate a download link.
+    /// May be a plain blob name, a container-prefixed path, a full HTTPS URL,
+    /// or a base64-encoded blob URL (Azure AI Search <c>metadata_storage_path</c> field).
+    /// Empty when not available from the index.
+    /// </summary>
+    public string SourcePath { get; init; }
+
+    public SearchResult(string id, string title, string content, double score, string sourcePath = "")
     {
         Id = id;
         Title = title;
         Content = content;
         Score = score;
+        SourcePath = sourcePath;
     }
 }

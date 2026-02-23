@@ -28,6 +28,7 @@ builder.Services
     .AddSingleton<IChatService, ChatService>()
     .AddSingleton<IRagService, RagService>()
     .AddSingleton<IBlobIngestionService, BlobIngestionService>()
+    .AddSingleton<IBlobDownloadService, BlobDownloadService>()
     .AddSingleton<ICosmosDbService, CosmosDbService>()
     .AddSingleton<IIngestionPipelineService, IngestionPipelineService>();
 
@@ -116,7 +117,7 @@ app.MapPost("/api/chat", async (ChatApiRequest req, IRagService rag, Cancellatio
         {
             answer = response.Answer,
             sources = response.Sources
-                .Select(s => new { s.Title, s.Score })
+                .Select(s => new { s.Title, s.Score, sourcePath = s.SourcePath })
                 .ToArray(),
         });
     }
@@ -159,6 +160,22 @@ app.MapGet("/api/search/fields", async (ISearchService search, CancellationToken
             title: "Could not retrieve index fields",
             statusCode: 500);
     }
+});
+
+// GET /api/blob/download?path={sourcePath} — generate a SAS URL and redirect to it
+app.MapGet("/api/blob/download", (
+    string? path,
+    IBlobDownloadService blobDownload) =>
+{
+    if (string.IsNullOrWhiteSpace(path))
+        return Results.BadRequest("path parameter is required");
+
+    string? url = blobDownload.GenerateDownloadUrl(path);
+    if (url is null)
+        return Results.NotFound("Could not resolve a download URL for the given path.");
+
+    // 302 redirect → browser opens / downloads the file directly from Blob Storage.
+    return Results.Redirect(url);
 });
 
 // POST /api/ingest — run the Blob → Cosmos DB ingestion pipeline

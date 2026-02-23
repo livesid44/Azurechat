@@ -298,10 +298,20 @@ function appendAssistantMessage(text, sources) {
 
   let sourcesHtml = '';
   if (sources.length > 0) {
-    const badges = sources.map(s =>
-      `<span class="badge bg-secondary fw-normal me-1 mb-1"
-             title="Score: ${s.score?.toFixed(3) ?? '—'}">${escapeHtml(s.title || 'Untitled')} <small class="opacity-75">${s.score?.toFixed(3) ?? ''}</small></span>`
-    ).join('');
+    const badges = sources.map(s => {
+      const scoreStr = s.score?.toFixed(3) ?? '';
+      const label = `${escapeHtml(s.title || 'Untitled')}${scoreStr ? ` <small class="opacity-75">${scoreStr}</small>` : ''}`;
+      const titleAttr = `Score: ${s.score?.toFixed(3) ?? '—'}`;
+      if (s.sourcePath) {
+        const href = `/api/blob/download?path=${encodeURIComponent(s.sourcePath)}`;
+        return `<a class="badge bg-secondary fw-normal me-1 mb-1 text-decoration-none"
+                   href="${href}" target="_blank" rel="noopener noreferrer"
+                   title="${escapeHtml(titleAttr)} — click to open file"
+                 >${label} <i class="bi bi-box-arrow-up-right ms-1" style="font-size:.7em;"></i></a>`;
+      }
+      return `<span class="badge bg-secondary fw-normal me-1 mb-1"
+                    title="${escapeHtml(titleAttr)}">${label}</span>`;
+    }).join('');
     sourcesHtml = `<div class="chat-sources mt-2">
       <small class="text-muted d-block mb-1"><i class="bi bi-search me-1"></i>Sources used:</small>
       ${badges}
