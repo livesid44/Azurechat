@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using AzureChat.Configuration;
 using AzureChat.Models;
 using Microsoft.Azure.Cosmos;
@@ -48,16 +49,47 @@ public sealed class CosmosDbService : ICosmosDbService, IAsyncDisposable
     {
         Container container = await EnsureContainerAsync(cancellationToken);
 
-        // Cosmos SDK uses Newtonsoft by default; we pass the document as a JObject-equivalent
-        // by serialising via System.Text.Json and deserialising as dynamic to avoid a hard
-        // dependency on Newtonsoft in this layer.
-        string json = JsonSerializer.Serialize(document);
+        // Determine the partition key value to use for this document.
+        // Priority: 1) explicit PartitionKeyValue from config (static, same for all docs)
+        //           2) field derived from PartitionKeyPath extracted from the document JSON
+        //           3) fallback: document.SourceBlob
+        string pkField = _options.PartitionKeyField;          // e.g. "vendorId", "sourceBlob"
+        string pkValue = string.IsNullOrWhiteSpace(_options.PartitionKeyValue)
+            ? document.SourceBlob                             // default / auto-derive
+            : _options.PartitionKeyValue;                     // static value from config
+
+        // Serialise document as a mutable JsonObject so we can inject the PK field if it is
+        // missing or if a static override is configured — Cosmos requires the PK field to exist
+        // in the document JSON with the exact value passed to UpsertItemStreamAsync.
+        // Note: deserialise directly to JsonObject (not via JsonDocument) so all values are owned
+        // copies and there is no risk of ObjectDisposedException from lazy JsonElement wrappers.
+        string rawJson = JsonSerializer.Serialize(document);
+        var jsonObj = JsonSerializer.Deserialize<JsonNode>(rawJson)!.AsObject();
+
+        // Inject/overwrite the PK field with the resolved value.
+        jsonObj[pkField] = pkValue;
+
+        string json = jsonObj.ToJsonString();
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
 
-        ResponseMessage response = await container.UpsertItemStreamAsync(
-            stream,
-            new PartitionKey(document.SourceBlob),
-            cancellationToken: cancellationToken);
+        ResponseMessage response;
+        try
+        {
+            response = await container.UpsertItemStreamAsync(
+                stream,
+                new PartitionKey(pkValue),
+                cancellationToken: cancellationToken);
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("partition key path") ||
+                                            ex.Message.Contains("PartitionKey"))
+        {
+            throw new InvalidOperationException(
+                $"Cosmos partition key mismatch: the container '{_options.ContainerName}' " +
+                $"uses a different partition key path than '{_options.PartitionKeyPath}'. " +
+                $"Set CosmosDb__PartitionKeyPath in appsettings.json to match your container's " +
+                $"actual partition key path, and optionally set CosmosDb__PartitionKeyValue to a " +
+                $"static string (e.g. \"rag-docs\"). Original: {ex.Message}", ex);
+        }
 
         if (!response.IsSuccessStatusCode)
         {
@@ -79,13 +111,21 @@ public sealed class CosmosDbService : ICosmosDbService, IAsyncDisposable
             if (string.IsNullOrWhiteSpace(body))
                 body = response.ErrorMessage ?? "(no response body)";
 
+            // Detect partition key mismatch in the response body and add guidance.
+            if (body.Contains("partition key path") || body.Contains("PartitionKey"))
+            {
+                body += $" → Fix: set CosmosDb__PartitionKeyPath and CosmosDb__PartitionKeyValue " +
+                        $"in appsettings.json to match your existing container's partition key. " +
+                        $"Current config: path='{_options.PartitionKeyPath}', value='{_options.PartitionKeyValue}'.";
+            }
+
             throw new InvalidOperationException(
                 $"Cosmos upsert failed ({(int)response.StatusCode}): {body}");
         }
 
         _logger.LogDebug(
-            "Upserted document '{Id}' ({SourceBlob}) into Cosmos DB container '{Container}'",
-            document.Id, document.SourceBlob, _options.ContainerName);
+            "Upserted document '{Id}' ({SourceBlob}) into Cosmos DB container '{Container}' [pk={PkField}={PkValue}]",
+            document.Id, document.SourceBlob, _options.ContainerName, pkField, pkValue);
     }
 
     public async ValueTask DisposeAsync()
