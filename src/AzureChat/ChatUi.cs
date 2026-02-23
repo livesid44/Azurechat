@@ -205,7 +205,8 @@ public sealed class ChatUi
 
     private void RenderHeader()
     {
-        AnsiConsole.Write(new FigletText("Azure Chat").Color(Color.SteelBlue1));
+        AnsiConsole.Write(new FigletText("Azure AI").Color(Color.SteelBlue1));
+        AnsiConsole.MarkupLine("[bold steelblue1]Assistant[/]");
         AnsiConsole.MarkupLine("[dim]Azure OpenAI + Azure AI Search (RAG) + Blob→Cosmos Ingestion[/]");
         AnsiConsole.WriteLine();
     }

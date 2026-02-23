@@ -1,4 +1,4 @@
-# AzureChat
+# Azure AI Assistant
 
 A .NET 8 **web application** that connects with **Azure OpenAI** and **Azure AI Search** to provide a browser-based chatbot with optional **Retrieval-Augmented Generation (RAG)**, plus a **Blob → Cosmos DB ingestion pipeline** to populate the search index source data.
 

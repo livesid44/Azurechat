@@ -1,9 +1,9 @@
 {
-  "name": "AzureChat",
+  "name": "Azure AI Assistant",
   "forwardPorts": [8080],
   "portsAttributes": {
     "8080": {
-      "label": "AzureChat Web",
+      "label": "Azure AI Assistant",
       "onAutoForward": "openBrowser"
     }
   },
