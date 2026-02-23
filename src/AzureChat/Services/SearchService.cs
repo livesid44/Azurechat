@@ -41,9 +41,20 @@ public sealed class SearchService : ISearchService
         var searchOptions = new SearchOptions
         {
             Size = _options.TopK,
-            Select = { _options.ContentField, _options.TitleField },
             IncludeTotalCount = false,
         };
+
+        // Only add field names to $select that are explicitly configured and non-empty.
+        // Omitting $select entirely causes Azure AI Search to return all fields, which
+        // avoids a 400 "property not found" error when the index schema uses different
+        // field names than the defaults.
+        var fieldsToSelect = new[] { "id", _options.ContentField, _options.TitleField }
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Distinct()
+            .ToList();
+
+        foreach (string field in fieldsToSelect)
+            searchOptions.Select.Add(field);
 
         _logger.LogDebug("Searching index '{Index}' for: {Query}", _options.IndexName, query);
 
