@@ -67,11 +67,60 @@ public sealed class BlobIngestionService : IBlobIngestionService
 
     // -----------------------------------------------------------------------
 
+    /// <summary>
+    /// Returns <see langword="true"/> when a blob should be skipped before downloading.
+    /// Skips hidden files (file name starts with '.', e.g. .DS_Store) and blobs whose
+    /// declared content type is a known binary format.
+    /// </summary>
+    internal static bool ShouldSkipBlob(string blobName, string? contentType)
+    {
+        // Skip hidden files regardless of content type (e.g. .DS_Store, .gitkeep)
+        string fileName = Path.GetFileName(blobName);
+        if (fileName.StartsWith('.'))
+            return true;
+
+        // Skip blobs with binary content types
+        if (contentType is not null)
+        {
+            foreach (string prefix in BinaryContentTypePrefixes)
+            {
+                if (contentType.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Content-type prefixes/values that indicate non-text binary data.
+    private static readonly string[] BinaryContentTypePrefixes =
+    [
+        "image/",
+        "video/",
+        "audio/",
+        "application/octet-stream",
+        "application/zip",
+        "application/x-zip",
+        "application/x-rar",
+        "application/x-7z-compressed",
+        "application/vnd.ms-excel.sheet.binary",
+    ];
+
     private async Task<BlobDocument?> TryProcessBlobAsync(
         BlobItem blobItem,
         CancellationToken cancellationToken)
     {
         string blobName = blobItem.Name;
+        string? contentType = blobItem.Properties.ContentType;
+
+        // Skip hidden files and known binary content types before downloading.
+        if (ShouldSkipBlob(blobName, contentType))
+        {
+            _logger.LogDebug(
+                "Blob '{Blob}' skipped (hidden file or binary content type '{ContentType}').",
+                blobName, contentType);
+            return null;
+        }
 
         try
         {
@@ -86,6 +135,15 @@ public sealed class BlobIngestionService : IBlobIngestionService
             if (string.IsNullOrWhiteSpace(content))
             {
                 _logger.LogWarning("Blob '{Blob}' is empty – skipping.", blobName);
+                return null;
+            }
+
+            // Reject content that contains null bytes — a sign of binary data that
+            // slipped past the content-type check (e.g. unlabelled binary blobs).
+            if (content.Contains('\0'))
+            {
+                _logger.LogWarning(
+                    "Blob '{Blob}' contains binary data (null bytes) – skipping.", blobName);
                 return null;
             }
 

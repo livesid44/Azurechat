@@ -61,9 +61,24 @@ public sealed class CosmosDbService : ICosmosDbService, IAsyncDisposable
 
         if (!response.IsSuccessStatusCode)
         {
-            string body = response.Content is not null
-                ? await new StreamReader(response.Content).ReadToEndAsync(cancellationToken)
-                : "(no body)";
+            string body = "(no response body)";
+            if (response.Content is not null)
+            {
+                try
+                {
+                    if (response.Content.CanSeek)
+                        response.Content.Position = 0;
+                    body = await new StreamReader(response.Content).ReadToEndAsync(cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not read Cosmos error response body for status {StatusCode}.", (int)response.StatusCode);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(body))
+                body = response.ErrorMessage ?? "(no response body)";
+
             throw new InvalidOperationException(
                 $"Cosmos upsert failed ({(int)response.StatusCode}): {body}");
         }
