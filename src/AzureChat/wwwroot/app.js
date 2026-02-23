@@ -79,7 +79,9 @@ async function loadRagStatus() {
     const status = await resp.json();
     ragEnabled = status.enabled;
     document.getElementById('ragToggle').checked = ragEnabled;
-  } catch { /* silently ignore */ }
+  } catch (e) {
+    console.warn('Could not load RAG status:', e);
+  }
 }
 
 async function toggleRag(e) {
@@ -214,7 +216,7 @@ function appendAssistantMessage(text, sources) {
   if (sources.length > 0) {
     const badges = sources.map(s =>
       `<span class="badge bg-secondary fw-normal me-1 mb-1"
-             title="Score: ${s.score?.toFixed(4) ?? '—'}">${escapeHtml(s.title || 'Untitled')} <small class="opacity-75">${s.score?.toFixed(3) ?? ''}</small></span>`
+             title="Score: ${s.score?.toFixed(3) ?? '—'}">${escapeHtml(s.title || 'Untitled')} <small class="opacity-75">${s.score?.toFixed(3) ?? ''}</small></span>`
     ).join('');
     sourcesHtml = `<div class="chat-sources mt-2">
       <small class="text-muted d-block mb-1"><i class="bi bi-search me-1"></i>Sources used:</small>

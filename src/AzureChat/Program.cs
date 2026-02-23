@@ -119,11 +119,7 @@ app.MapPost("/api/chat", async (ChatApiRequest req, IRagService rag, Cancellatio
     }
     catch (Exception ex)
     {
-        return Results.Ok(new
-        {
-            answer = $"⚠️ {ex.Message}",
-            sources = Array.Empty<object>(),
-        });
+        return Results.Problem(detail: ex.Message, title: "Chat request failed", statusCode: 500);
     }
 });
 
