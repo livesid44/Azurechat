@@ -180,6 +180,7 @@ cd src/AzureChat
 # Chat + RAG
 export AzureOpenAI__Endpoint="https://<your-resource>.openai.azure.com/"
 export AzureOpenAI__ApiKey="<your-key>"
+export AzureOpenAI__DeploymentName="<your-deployment-name>"   # exact name from Azure portal → Deployments
 export AzureSearch__Endpoint="https://<your-resource>.search.windows.net"
 export AzureSearch__ApiKey="<your-key>"
 export AzureSearch__IndexName="<your-index>"

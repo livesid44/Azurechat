@@ -79,9 +79,11 @@ function renderConfig(cfg) {
     <p class="text-muted mt-2 mb-0">
       Edit <code>src/AzureChat/appsettings.json</code> or set environment variables
       (use <code>__</code> as the section separator), e.g.:<br/>
+      <code>AzureOpenAI__DeploymentName=&lt;your-deployment&gt;</code><br/>
       <code>AzureSearch__ContentField=chunk</code><br/>
       <code>AzureSearch__TitleField=title</code><br/>
-      <small>Use <strong>Discover index fields</strong> above to find the correct names for your index.</small>
+      <small>Find the <strong>deployment name</strong> in Azure portal → your Azure OpenAI resource → <strong>Deployments</strong>.<br/>
+      Use <strong>Discover index fields</strong> above to find the correct Search field names.</small>
     </p>`;
 }
 

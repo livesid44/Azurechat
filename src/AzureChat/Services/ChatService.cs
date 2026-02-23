@@ -42,6 +42,11 @@ public sealed class ChatService : IChatService
         IReadOnlyList<Models.ChatMessage> history,
         CancellationToken cancellationToken = default)
     {
+        // Log active deployment so a wrong name is immediately visible in the console.
+        _logger.LogInformation(
+            "Chat completion → endpoint: '{Endpoint}', deployment: '{Deployment}'",
+            _options.Endpoint, _options.DeploymentName);
+
         var messages = new List<OpenAI.Chat.ChatMessage>(history.Count);
 
         foreach (var msg in history)
@@ -62,11 +67,24 @@ public sealed class ChatService : IChatService
 
         _logger.LogDebug("Requesting chat completion for {MessageCount} messages", messages.Count);
 
-        ClientResult<ChatCompletion> result = await GetChatClient().CompleteChatAsync(
-            messages, completionOptions, cancellationToken);
+        try
+        {
+            ClientResult<ChatCompletion> result = await GetChatClient().CompleteChatAsync(
+                messages, completionOptions, cancellationToken);
 
-        string reply = result.Value.Content[0].Text;
-        _logger.LogDebug("Received completion of {Length} chars", reply.Length);
-        return reply;
+            string reply = result.Value.Content[0].Text;
+            _logger.LogDebug("Received completion of {Length} chars", reply.Length);
+            return reply;
+        }
+        catch (ClientResultException ex) when (ex.Status == 404)
+        {
+            // Azure OpenAI returns 404 when the deployment name doesn't exist.
+            throw new InvalidOperationException(
+                $"Azure OpenAI deployment '{_options.DeploymentName}' was not found (HTTP 404). " +
+                "Check that the DeploymentName in appsettings.json exactly matches the deployment " +
+                "name shown in Azure portal → your Azure OpenAI resource → Deployments. " +
+                $"Set it via: AzureOpenAI__DeploymentName=<your-deployment-name>",
+                ex);
+        }
     }
 }
