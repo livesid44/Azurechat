@@ -1,5 +1,7 @@
 using Azure;
 using Azure.Search.Documents;
+using Azure.Search.Documents.Indexes;
+using Azure.Search.Documents.Indexes.Models;
 using Azure.Search.Documents.Models;
 using AzureChat.Configuration;
 using AzureChat.Models;
@@ -32,6 +34,30 @@ public sealed class SearchService : ISearchService
             new Uri(_options.Endpoint),
             _options.IndexName,
             new AzureKeyCredential(_options.ApiKey));
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<IndexField>> GetIndexFieldsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var indexClient = new SearchIndexClient(
+            new Uri(_options.Endpoint),
+            new AzureKeyCredential(_options.ApiKey));
+
+        Response<SearchIndex> response =
+            await indexClient.GetIndexAsync(_options.IndexName, cancellationToken);
+
+        var rawFields = response.Value.Fields.Select(f => new IndexField(
+            name:          f.Name,
+            type:          f.Type.ToString(),
+            isSearchable:  f.IsSearchable ?? false,
+            isRetrievable: f.IsHidden != true))   // IsHidden=true means NOT retrievable
+            .ToList();
+
+        _logger.LogDebug(
+            "Index '{Index}' has {Count} field(s).", _options.IndexName, rawFields.Count);
+
+        return IndexFieldRecommender.Annotate(rawFields);
+    }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<SearchResult>> SearchAsync(

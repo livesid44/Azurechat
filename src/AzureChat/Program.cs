@@ -125,6 +125,33 @@ app.MapPost("/api/chat", async (ChatApiRequest req, IRagService rag, Cancellatio
     }
 });
 
+// GET /api/search/fields — introspect the live index and return field list with suggestions
+app.MapGet("/api/search/fields", async (ISearchService search, CancellationToken ct) =>
+{
+    try
+    {
+        IReadOnlyList<IndexField> fields = await search.GetIndexFieldsAsync(ct);
+        return Results.Ok(new
+        {
+            fields = fields.Select(f => new
+            {
+                name          = f.Name,
+                type          = f.Type,
+                isSearchable  = f.IsSearchable,
+                isRetrievable = f.IsRetrievable,
+                suggestedRole = f.SuggestedRole,
+            }),
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            detail: ex.Message,
+            title: "Could not retrieve index fields",
+            statusCode: 500);
+    }
+});
+
 // POST /api/ingest — run the Blob → Cosmos DB ingestion pipeline
 app.MapPost("/api/ingest", async (IIngestionPipelineService pipeline, CancellationToken ct) =>
 {

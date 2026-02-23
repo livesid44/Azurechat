@@ -53,6 +53,13 @@ function renderConfig(cfg) {
     ${row('Index', cfg.search.indexName)}
     ${row('Content field', cfg.search.contentField)}
     ${row('Title field', cfg.search.titleField)}
+    <div class="mt-2 mb-1">
+      <button class="btn btn-sm btn-outline-info w-100" onclick="discoverIndexFields()"
+              id="discoverBtn" ${cfg.search.configured ? '' : 'disabled'}>
+        <i class="bi bi-binoculars me-1"></i>Discover index fields…
+      </button>
+    </div>
+    <div id="indexFieldsResult"></div>
     <hr class="my-2"/>
 
     <h6 class="text-uppercase text-muted mb-2">RAG</h6>
@@ -72,6 +79,75 @@ function renderConfig(cfg) {
       Set values via environment variables, e.g.<br/>
       <code>AzureOpenAI__Endpoint</code>, <code>AzureOpenAI__ApiKey</code>
     </p>`;
+}
+
+// ── Index field discovery ──────────────────────────────────────────────────
+async function discoverIndexFields() {
+  const btn = document.getElementById('discoverBtn');
+  const resultDiv = document.getElementById('indexFieldsResult');
+  if (!btn || !resultDiv) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Fetching…';
+  resultDiv.innerHTML = '';
+
+  try {
+    const resp = await fetch('/api/search/fields');
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      resultDiv.innerHTML = `<div class="alert alert-danger mt-2 py-2 small">${escapeHtml(data.detail || data.title || 'Error fetching fields')}</div>`;
+      return;
+    }
+
+    const fields = data.fields || [];
+    if (fields.length === 0) {
+      resultDiv.innerHTML = `<p class="text-muted small mt-2">No fields found in index.</p>`;
+      return;
+    }
+
+    const roleBadge = (role) => {
+      if (role === 'content') return `<span class="badge bg-primary ms-1">→ ContentField</span>`;
+      if (role === 'title')   return `<span class="badge bg-success ms-1">→ TitleField</span>`;
+      return '';
+    };
+
+    const rows = fields.map(f => `
+      <tr>
+        <td class="fw-semibold text-break">${escapeHtml(f.name)}${roleBadge(f.suggestedRole)}</td>
+        <td class="text-muted">${escapeHtml(f.type.replace('Edm.', ''))}</td>
+        <td class="text-center">${f.isSearchable ? '✔' : ''}</td>
+        <td class="text-center">${f.isRetrievable ? '✔' : ''}</td>
+      </tr>`).join('');
+
+    const content = fields.find(f => f.suggestedRole === 'content');
+    const title   = fields.find(f => f.suggestedRole === 'title');
+    const hint = (content || title) ? `
+      <div class="alert alert-info py-2 small mt-2">
+        <strong>Suggested settings:</strong><br/>
+        ${content ? `<code>AzureSearch__ContentField=${escapeHtml(content.name)}</code><br/>` : ''}
+        ${title   ? `<code>AzureSearch__TitleField=${escapeHtml(title.name)}</code>` : ''}
+        <br/><span class="text-muted">Or update <code>appsettings.json</code> and restart.</span>
+      </div>` : '';
+
+    resultDiv.innerHTML = `
+      ${hint}
+      <div class="table-responsive mt-1">
+        <table class="table table-sm table-dark table-bordered" style="font-size:.78rem;">
+          <thead><tr>
+            <th>Field name</th><th>Type</th>
+            <th title="Full-text searchable">🔍</th>
+            <th title="Retrievable in $select">📤</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  } catch (err) {
+    resultDiv.innerHTML = `<div class="alert alert-danger mt-2 py-2 small">Error: ${escapeHtml(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-binoculars me-1"></i>Discover index fields…';
+  }
 }
 
 // ── RAG toggle ─────────────────────────────────────────────────────────────
