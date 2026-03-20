@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Azure AI Assistant</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link href="app.css" rel="stylesheet" />
+</head>
+<body class="d-flex flex-column vh-100 overflow-hidden">
+
+  <!-- ── Top navigation bar ───────────────────────────────────────────── -->
+  <nav class="navbar navbar-dark bg-primary px-3 py-2 flex-shrink-0 shadow">
+    <span class="navbar-brand fw-bold fs-5 mb-0">
+      <i class="bi bi-stars me-2"></i>Azure AI Assistant
+    </span>
+
+    <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+      <!-- RAG toggle switch -->
+      <div class="form-check form-switch d-flex align-items-center gap-2 mb-0 me-1">
+        <input class="form-check-input" type="checkbox" id="ragToggle" role="switch" />
+        <label class="form-check-label text-white small fw-semibold" for="ragToggle">
+          <i class="bi bi-search me-1"></i>RAG
+        </label>
+      </div>
+
+      <!-- Ingest button -->
+      <button class="btn btn-sm btn-outline-light" id="ingestBtn" onclick="runIngest()"
+              title="Run Blob → Cosmos DB ingestion pipeline">
+        <i class="bi bi-cloud-arrow-up-fill me-1"></i>Ingest
+      </button>
+
+      <!-- Clear button -->
+      <button class="btn btn-sm btn-outline-light" onclick="clearHistory()"
+              title="Clear conversation history">
+        <i class="bi bi-trash-fill me-1"></i>Clear
+      </button>
+
+      <!-- API Docs link -->
+      <a class="btn btn-sm btn-outline-light" href="/docs.html" target="_blank"
+         title="API Reference &amp; cURL examples">
+        <i class="bi bi-terminal"></i>
+      </a>
+
+      <!-- Config panel toggle -->
+      <button class="btn btn-sm btn-outline-light" type="button"
+              data-bs-toggle="offcanvas" data-bs-target="#configPanel"
+              title="Show configuration">
+        <i class="bi bi-gear-fill"></i>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── Configuration off-canvas panel ──────────────────────────────── -->
+  <div class="offcanvas offcanvas-end" tabindex="-1" id="configPanel"
+       aria-labelledby="configPanelLabel">
+    <div class="offcanvas-header border-bottom">
+      <h5 class="offcanvas-title" id="configPanelLabel">
+        <i class="bi bi-gear me-2"></i>Configuration
+      </h5>
+      <button type="button" class="btn-close btn-close-white"
+              data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body small" id="configBody">
+      <div class="text-center text-muted py-4">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+        Loading configuration…
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Chat message area ────────────────────────────────────────────── -->
+  <div class="flex-grow-1 overflow-auto" id="chatMessages">
+    <!-- Welcome card -->
+    <div class="d-flex justify-content-center pt-4 pb-2 px-3" id="welcomeCard">
+      <div class="card border-0 shadow-sm" style="max-width:520px; width:100%;">
+        <div class="card-body">
+          <h5 class="card-title">
+            <i class="bi bi-robot me-2 text-primary"></i>Welcome to Azure AI Assistant
+          </h5>
+          <p class="card-text small mb-2">
+            Backed by <strong>Azure OpenAI</strong> with optional
+            <strong>Retrieval-Augmented Generation</strong> via Azure AI Search.
+          </p>
+          <ul class="small mb-0 ps-3">
+            <li>Toggle <strong>RAG</strong> in the top bar to enable document-grounded answers.</li>
+            <li>Click <strong>Ingest</strong> to pull documents from Blob Storage into Cosmos DB.</li>
+            <li>Click <strong>⚙</strong> to review the current configuration.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Message input area ───────────────────────────────────────────── -->
+  <div class="border-top bg-body flex-shrink-0 p-3">
+    <div class="mx-auto" style="max-width:860px;">
+      <div class="input-group shadow-sm">
+        <textarea class="form-control" id="messageInput"
+                  placeholder="Type your message… (Enter to send, Shift+Enter for newline)"
+                  rows="2" style="resize:none;"
+                  onkeydown="handleKeyDown(event)"></textarea>
+        <button class="btn btn-primary px-3" id="sendBtn" onclick="sendMessage()"
+                title="Send (Enter)">
+          <i class="bi bi-send-fill"></i>
+        </button>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-1 px-1">
+        <small class="text-muted" id="statusText"></small>
+        <small class="text-muted">
+          <kbd>Enter</kbd> send &nbsp;·&nbsp; <kbd>Shift+Enter</kbd> newline
+        </small>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

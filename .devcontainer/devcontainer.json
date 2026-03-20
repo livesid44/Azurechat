@@ -1,0 +1,19 @@
+{
+  "name": "Azure AI Assistant",
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": {
+      "label": "Azure AI Assistant",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postCreateCommand": "dotnet restore AzureChat.slnx",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.csdevkit"
+      ]
+    }
+  }
+}
