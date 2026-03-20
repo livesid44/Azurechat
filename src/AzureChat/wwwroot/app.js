@@ -1,5 +1,78 @@
 'use strict';
 
+// ── API console logger ─────────────────────────────────────────────────────
+// Every fetch() in this app goes through apiFetch() which writes a tidy
+// collapsible group to the browser DevTools console.  Open DevTools → Console
+// to see the full request/response for every call.
+const REDACT_KEYS = new Set([
+  'apikey', 'api_key', 'key', 'password', 'secret', 'token',
+  'connectionstring', 'accountkey', 'primarykey',
+]);
+
+function _redactBody(body) {
+  if (!body || typeof body !== 'string') return body;
+  try {
+    const parsed = JSON.parse(body);
+    return JSON.stringify(_redactObj(parsed), null, 2);
+  } catch {
+    return body;
+  }
+}
+
+function _redactObj(obj) {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(_redactObj);
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = REDACT_KEYS.has(k.toLowerCase().replace(/[_-]/g, ''))
+      ? (v ? '***redacted***' : v)
+      : _redactObj(v);
+  }
+  return out;
+}
+
+async function apiFetch(url, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const t0 = performance.now();
+  const label = `[API] ${method} ${url}`;
+
+  console.groupCollapsed(label);
+  console.log('%c→ Request', 'font-weight:bold;color:#4fc3f7');
+  console.log('URL    :', url);
+  console.log('Method :', method);
+  if (options.headers) console.log('Headers:', options.headers);
+  if (options.body)    console.log('Body   :', _redactBody(options.body));
+
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (networkErr) {
+    console.error('%c✖ Network error', 'font-weight:bold;color:#ef5350', networkErr.message);
+    console.groupEnd();
+    throw networkErr;
+  }
+
+  const elapsed = (performance.now() - t0).toFixed(0);
+  const ok = response.ok;
+  const statusStyle = ok ? 'color:#66bb6a;font-weight:bold' : 'color:#ef5350;font-weight:bold';
+  console.log(`%c← Response (${elapsed} ms)`, 'font-weight:bold;color:#4fc3f7');
+  console.log(`%cStatus : ${response.status} ${response.statusText}`, statusStyle);
+
+  // Clone so the original body stream is still consumable by the caller.
+  const clone = response.clone();
+  try {
+    const text = await clone.text();
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { parsed = text; }
+    console.log('Body   :', parsed);
+  } catch (parseErr) {
+    console.debug('Response body could not be read for logging:', parseErr.message);
+  }
+
+  console.groupEnd();
+  return response;
+}
+
 // ── State ──────────────────────────────────────────────────────────────────
 let conversationHistory = [];
 let ragEnabled = true;
@@ -20,7 +93,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // ── Configuration ──────────────────────────────────────────────────────────
 async function loadConfig() {
   try {
-    const resp = await fetch('/api/config');
+    const resp = await apiFetch('/api/config');
     const cfg = await resp.json();
     renderConfig(cfg);
   } catch (e) {
@@ -201,7 +274,7 @@ async function saveSettings() {
   };
 
   try {
-    const resp = await fetch('/api/settings', {
+    const resp = await apiFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -236,7 +309,7 @@ async function discoverIndexFields() {
   resultDiv.innerHTML = '';
 
   try {
-    const resp = await fetch('/api/search/fields');
+    const resp = await apiFetch('/api/search/fields');
     const data = await resp.json();
 
     if (!resp.ok) {
@@ -297,7 +370,7 @@ async function discoverIndexFields() {
 // ── RAG toggle ─────────────────────────────────────────────────────────────
 async function loadRagStatus() {
   try {
-    const resp = await fetch('/api/rag');
+    const resp = await apiFetch('/api/rag');
     const status = await resp.json();
     ragEnabled = status.enabled;
     document.getElementById('ragToggle').checked = ragEnabled;
@@ -309,7 +382,7 @@ async function loadRagStatus() {
 async function toggleRag(e) {
   const desired = e.target.checked;
   try {
-    const resp = await fetch('/api/rag', {
+    const resp = await apiFetch('/api/rag', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: desired }),
@@ -349,7 +422,7 @@ async function sendMessage() {
   setStatus('');
 
   try {
-    const resp = await fetch('/api/chat', {
+    const resp = await apiFetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, history: conversationHistory }),
@@ -410,7 +483,7 @@ async function runIngest() {
   setStatus('Running ingestion pipeline…');
 
   try {
-    const resp = await fetch('/api/ingest', { method: 'POST' });
+    const resp = await apiFetch('/api/ingest', { method: 'POST' });
     const result = await resp.json();
 
     if (!resp.ok) {
