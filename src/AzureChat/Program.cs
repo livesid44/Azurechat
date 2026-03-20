@@ -65,6 +65,7 @@ app.MapGet("/api/config", (
         {
             endpoint = openAI.Value.Endpoint,
             deploymentName = openAI.Value.DeploymentName,
+            authType = openAI.Value.AuthType,
             configured = !string.IsNullOrWhiteSpace(openAI.Value.Endpoint)
                       && !string.IsNullOrWhiteSpace(openAI.Value.ApiKey),
         },
@@ -142,6 +143,7 @@ app.MapPost("/api/settings", async (
         var s = new JsonObject();
         Set(s, "Endpoint", openAI.Endpoint);
         Set(s, "ApiKey", openAI.ApiKey);
+        Set(s, "AuthType", openAI.AuthType);
         Set(s, "DeploymentName", openAI.DeploymentName);
         root["AzureOpenAI"] = s;
     }
@@ -316,7 +318,7 @@ record ChatHistoryItem(string Role, string Content);
 record ChatApiRequest(string Message, IReadOnlyList<ChatHistoryItem>? History);
 
 // Settings update DTOs — all fields nullable; only non-empty values are written to appsettings.local.json.
-record OpenAISettingsUpdate(string? Endpoint, string? ApiKey, string? DeploymentName);
+record OpenAISettingsUpdate(string? Endpoint, string? ApiKey, string? AuthType, string? DeploymentName);
 record SearchSettingsUpdate(
     string? Endpoint, string? ApiKey, string? IndexName,
     string? ContentField, string? TitleField, string? KeyField, string? VectorField);

@@ -123,6 +123,7 @@ function renderConfig(cfg) {
     <h6 class="text-uppercase text-muted letter-spacing mb-2">Azure OpenAI</h6>
     ${row('Endpoint', cfg.openAI.endpoint, cfg.openAI.configured)}
     ${row('Deployment', cfg.openAI.deploymentName)}
+    ${row('Auth type', cfg.openAI.authType || 'ApiKey')}
     <hr class="my-2"/>
 
     <h6 class="text-uppercase text-muted mb-2">Azure AI Search</h6>
@@ -179,6 +180,19 @@ function passwordField(id, label, placeholder) {
     </div>`;
 }
 
+function selectField(id, label, options, currentValue, onchange = '') {
+  const opts = options.map(([val, txt]) =>
+    `<option value="${val}"${currentValue === val ? ' selected' : ''}>${txt}</option>`
+  ).join('');
+  return `
+    <div class="mb-2">
+      <label class="form-label mb-1 text-muted" for="${id}" style="font-size:.78rem;">${label}</label>
+      <select class="form-select form-select-sm bg-dark text-white border-secondary" id="${id}"${onchange ? ` onchange="${onchange}"` : ''}>
+        ${opts}
+      </select>
+    </div>`;
+}
+
 function buildSettingsForm(cfg) {
   return `
     <div class="alert alert-info py-2 small mb-2">
@@ -192,7 +206,11 @@ function buildSettingsForm(cfg) {
       <small class="text-muted fw-normal">(portal → OpenAI resource → Keys and Endpoint)</small>
     </h6>
     ${field('se-oai-endpoint', 'Endpoint', 'https://xxx.openai.azure.com/', cfg.openAI.endpoint || '')}
-    ${passwordField('se-oai-key', 'API Key (Key 1)', 'paste key from portal')}
+    ${selectField('se-oai-authtype', 'Auth Type', [
+        ['ApiKey', 'API Key (portal → Keys and Endpoint → Key 1)'],
+        ['Bearer', 'Bearer token (Entra ID / az account get-access-token)'],
+      ], cfg.openAI.authType || 'ApiKey', 'updateCredentialLabel()')}
+    ${passwordField('se-oai-key', 'Credential', 'paste API key or Bearer token from portal')}
     ${field('se-oai-deploy', 'Deployment Name', 'gpt-4o', cfg.openAI.deploymentName || '')}
 
     <h6 class="text-uppercase text-muted mt-3 mb-2" style="font-size:.7rem;">
@@ -237,6 +255,15 @@ function toggleSettingsEditor() {
   el.classList.toggle('d-none');
 }
 
+function updateCredentialLabel() {
+  const authType = document.getElementById('se-oai-authtype')?.value;
+  const lbl = document.querySelector('label[for="se-oai-key"]');
+  if (!lbl) return;
+  lbl.textContent = authType === 'Bearer'
+    ? 'Bearer token (Entra ID access token)'
+    : 'API Key (Key 1 from portal → Keys and Endpoint)';
+}
+
 async function saveSettings() {
   const get = (id) => document.getElementById(id)?.value?.trim() || null;
   const fb = document.getElementById('settingsFeedback');
@@ -246,6 +273,7 @@ async function saveSettings() {
     openAI: {
       endpoint:       get('se-oai-endpoint'),
       apiKey:         get('se-oai-key'),
+      authType:       document.getElementById('se-oai-authtype')?.value || null,
       deploymentName: get('se-oai-deploy'),
     },
     search: {

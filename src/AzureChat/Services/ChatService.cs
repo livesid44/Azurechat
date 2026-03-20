@@ -34,9 +34,11 @@ public sealed class ChatService : IChatService
     private ChatClient GetChatClient()
     {
         if (_chatClient is not null) return _chatClient;
-        AzureOpenAIClient azureClient = new(
-            new Uri(Options.Endpoint),
-            new ApiKeyCredential(Options.ApiKey));
+
+        AzureOpenAIClient azureClient = Options.AuthType.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
+            ? new AzureOpenAIClient(new Uri(Options.Endpoint), new StaticBearerTokenCredential(Options.ApiKey))
+            : new AzureOpenAIClient(new Uri(Options.Endpoint), new ApiKeyCredential(Options.ApiKey));
+
         _chatClient = azureClient.GetChatClient(Options.DeploymentName);
         return _chatClient;
     }
