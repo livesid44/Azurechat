@@ -29,9 +29,13 @@ async function loadConfig() {
   }
 }
 
+// Cached config for pre-populating the settings form
+let _lastConfig = null;
+
 function renderConfig(cfg) {
+  _lastConfig = cfg;
   const configuredBadge = (ok) =>
-    `<span class="badge ms-1 ${ok ? 'bg-success' : 'bg-secondary'}">${ok ? 'Configured' : 'Not set'}</span>`;
+    `<span class="badge ms-1 ${ok ? 'bg-success' : 'bg-danger'}">${ok ? 'Configured' : 'Not set'}</span>`;
 
   const row = (label, value, ok) => `
     <div class="d-flex justify-content-between align-items-start mb-2">
@@ -76,15 +80,149 @@ function renderConfig(cfg) {
     ${row('Container', cfg.cosmos.containerName)}
     <hr class="my-2"/>
 
-    <p class="text-muted mt-2 mb-0">
-      Edit <code>src/AzureChat/appsettings.json</code> or set environment variables
-      (use <code>__</code> as the section separator), e.g.:<br/>
-      <code>AzureOpenAI__DeploymentName=&lt;your-deployment&gt;</code><br/>
-      <code>AzureSearch__ContentField=chunk</code><br/>
-      <code>AzureSearch__TitleField=title</code><br/>
-      <small>Find the <strong>deployment name</strong> in Azure portal → your Azure OpenAI resource → <strong>Deployments</strong>.<br/>
-      Use <strong>Discover index fields</strong> above to find the correct Search field names.</small>
-    </p>`;
+    <button class="btn btn-sm btn-outline-warning w-100 mb-1"
+            onclick="toggleSettingsEditor()">
+      <i class="bi bi-pencil-square me-1"></i>Edit credentials…
+    </button>
+    <div id="settingsEditor" class="d-none mt-2">${buildSettingsForm(cfg)}</div>`;
+}
+
+// ── Settings editor ────────────────────────────────────────────────────────
+function field(id, label, placeholder, value = '') {
+  return `
+    <div class="mb-2">
+      <label class="form-label mb-1 text-muted" for="${id}" style="font-size:.78rem;">${label}</label>
+      <input type="text" class="form-control form-control-sm bg-dark text-white border-secondary"
+             id="${id}" placeholder="${placeholder}" value="${escapeHtml(value)}" autocomplete="off" />
+    </div>`;
+}
+
+function passwordField(id, label, placeholder) {
+  return `
+    <div class="mb-2">
+      <label class="form-label mb-1 text-muted" for="${id}" style="font-size:.78rem;">${label}</label>
+      <input type="password" class="form-control form-control-sm bg-dark text-white border-secondary"
+             id="${id}" placeholder="${placeholder}" autocomplete="new-password" />
+    </div>`;
+}
+
+function buildSettingsForm(cfg) {
+  return `
+    <div class="alert alert-info py-2 small mb-2">
+      <i class="bi bi-info-circle me-1"></i>
+      Paste values from <strong>Azure portal</strong>. Leave a field blank to keep the existing value.
+      Credentials are saved to <code>appsettings.local.json</code> (gitignored).
+    </div>
+
+    <h6 class="text-uppercase text-muted mb-2" style="font-size:.7rem;">
+      <i class="bi bi-cpu me-1"></i>Azure OpenAI
+      <small class="text-muted fw-normal">(portal → OpenAI resource → Keys and Endpoint)</small>
+    </h6>
+    ${field('se-oai-endpoint', 'Endpoint', 'https://xxx.openai.azure.com/', cfg.openAI.endpoint || '')}
+    ${passwordField('se-oai-key', 'API Key (Key 1)', 'paste key from portal')}
+    ${field('se-oai-deploy', 'Deployment Name', 'gpt-4o', cfg.openAI.deploymentName || '')}
+
+    <h6 class="text-uppercase text-muted mt-3 mb-2" style="font-size:.7rem;">
+      <i class="bi bi-search me-1"></i>Azure AI Search
+      <small class="text-muted fw-normal">(portal → Search resource → Keys)</small>
+    </h6>
+    ${field('se-srch-endpoint', 'Endpoint', 'https://xxx.search.windows.net', cfg.search.endpoint || '')}
+    ${passwordField('se-srch-key', 'Admin / Query Key', 'paste key from portal')}
+    ${field('se-srch-index', 'Index Name', 'rag-index', cfg.search.indexName || '')}
+    ${field('se-srch-content', 'Content Field', 'chunk', cfg.search.contentField || '')}
+    ${field('se-srch-title', 'Title Field', 'title', cfg.search.titleField || '')}
+    ${field('se-srch-key-field', 'Key Field', 'id', cfg.search.keyField || '')}
+
+    <h6 class="text-uppercase text-muted mt-3 mb-2" style="font-size:.7rem;">
+      <i class="bi bi-cloud me-1"></i>Blob Storage
+      <small class="text-muted fw-normal">(portal → Storage account → Access keys)</small>
+    </h6>
+    ${passwordField('se-blob-connstr', 'Connection String (preferred)', 'DefaultEndpointsProtocol=https;AccountName=...')}
+    <div class="text-muted small text-center mb-1">— or account name + key —</div>
+    ${field('se-blob-acct', 'Account Name', 'mystorageaccount', cfg.blob.accountName || '')}
+    ${passwordField('se-blob-acctkey', 'Account Key', 'paste key from portal')}
+    ${field('se-blob-container', 'Container Name', 'documents', cfg.blob.containerName || '')}
+
+    <h6 class="text-uppercase text-muted mt-3 mb-2" style="font-size:.7rem;">
+      <i class="bi bi-database me-1"></i>Cosmos DB
+      <small class="text-muted fw-normal">(portal → Cosmos DB → Keys)</small>
+    </h6>
+    ${field('se-cos-endpoint', 'URI', 'https://xxx.documents.azure.com:443/', cfg.cosmos.endpoint || '')}
+    ${passwordField('se-cos-key', 'Primary Key', 'paste primary key from portal')}
+    ${field('se-cos-db', 'Database Name', 'rag-db', cfg.cosmos.databaseName || '')}
+    ${field('se-cos-container', 'Container Name', 'documents', cfg.cosmos.containerName || '')}
+
+    <div id="settingsFeedback"></div>
+    <button class="btn btn-warning btn-sm w-100 mt-2" onclick="saveSettings()">
+      <i class="bi bi-floppy me-1"></i>Save credentials
+    </button>`;
+}
+
+function toggleSettingsEditor() {
+  const el = document.getElementById('settingsEditor');
+  if (!el) return;
+  el.classList.toggle('d-none');
+}
+
+async function saveSettings() {
+  const get = (id) => document.getElementById(id)?.value?.trim() || null;
+  const fb = document.getElementById('settingsFeedback');
+  if (fb) fb.innerHTML = '<div class="alert alert-secondary py-1 small mt-1">Saving…</div>';
+
+  const body = {
+    openAI: {
+      endpoint:       get('se-oai-endpoint'),
+      apiKey:         get('se-oai-key'),
+      deploymentName: get('se-oai-deploy'),
+    },
+    search: {
+      endpoint:     get('se-srch-endpoint'),
+      apiKey:       get('se-srch-key'),
+      indexName:    get('se-srch-index'),
+      contentField: get('se-srch-content'),
+      titleField:   get('se-srch-title'),
+      keyField:     get('se-srch-key-field'),
+      vectorField:  null,
+    },
+    blob: {
+      connectionString: get('se-blob-connstr'),
+      accountName:      get('se-blob-acct'),
+      accountKey:       get('se-blob-acctkey'),
+      containerName:    get('se-blob-container'),
+    },
+    cosmos: {
+      endpoint:        get('se-cos-endpoint'),
+      accountKey:      get('se-cos-key'),
+      databaseName:    get('se-cos-db'),
+      containerName:   get('se-cos-container'),
+      partitionKeyPath:  null,
+      partitionKeyValue: null,
+    },
+  };
+
+  try {
+    const resp = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const result = await resp.json();
+
+    if (!resp.ok) {
+      if (fb) fb.innerHTML = `<div class="alert alert-danger py-1 small mt-1">
+        ❌ ${escapeHtml(result.detail || result.title || 'Save failed')}</div>`;
+      return;
+    }
+
+    if (fb) fb.innerHTML = `<div class="alert alert-success py-1 small mt-1">
+      ✅ ${escapeHtml(result.message)}</div>`;
+
+    // Refresh the config summary panel so it shows the new values.
+    await loadConfig();
+  } catch (err) {
+    if (fb) fb.innerHTML = `<div class="alert alert-danger py-1 small mt-1">
+      ❌ ${escapeHtml(err.message)}</div>`;
+  }
 }
 
 // ── Index field discovery ──────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using AzureChat.Configuration;
 using AzureChat.Models;
 using AzureChat.Services;
@@ -7,9 +8,12 @@ using Microsoft.Extensions.Options;
 var builder = WebApplication.CreateBuilder(args);
 
 // Configuration — appsettings.json is loaded automatically by the Web SDK.
+// appsettings.local.json (gitignored) holds credentials set via the in-app settings editor.
 // Environment variable overrides use __ as the section separator:
 //   AzureOpenAI__Endpoint, AzureOpenAI__ApiKey, BlobStorage__ConnectionString, etc.
-builder.Configuration.AddEnvironmentVariables();
+builder.Configuration
+    .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables();
 
 // Logging
 builder.Logging.ClearProviders().AddConsole();
@@ -77,6 +81,7 @@ app.MapGet("/api/config", (
         rag = new { enabled = rag.IsEnabled },
         blob = new
         {
+            accountName = blob.Value.AccountName,
             containerName = blob.Value.ContainerName,
             configured = !string.IsNullOrWhiteSpace(blob.Value.ContainerName)
                       && (!string.IsNullOrWhiteSpace(blob.Value.ConnectionString)
@@ -84,6 +89,7 @@ app.MapGet("/api/config", (
         },
         cosmos = new
         {
+            endpoint = cosmos.Value.Endpoint,
             databaseName = cosmos.Value.DatabaseName,
             containerName = cosmos.Value.ContainerName,
             configured = !string.IsNullOrWhiteSpace(cosmos.Value.Endpoint)
@@ -95,6 +101,108 @@ app.MapGet("/api/config", (
 // GET /api/rag — RAG toggle status
 app.MapGet("/api/rag", (IRagService rag) =>
     Results.Ok(new { enabled = rag.IsEnabled }));
+
+// POST /api/settings — save credentials to appsettings.local.json and reload config
+app.MapPost("/api/settings", async (
+    SettingsUpdateRequest req,
+    IConfiguration configuration,
+    IWebHostEnvironment env,
+    ILogger<Program> logger) =>
+{
+    var localSettingsPath = Path.Combine(env.ContentRootPath, "appsettings.local.json");
+
+    // Load existing local settings (if any) so we only overwrite supplied sections.
+    JsonObject root;
+    if (File.Exists(localSettingsPath))
+    {
+        try
+        {
+            root = JsonNode.Parse(await File.ReadAllTextAsync(localSettingsPath)) as JsonObject
+                   ?? new JsonObject();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Could not parse existing appsettings.local.json — starting fresh");
+            root = new JsonObject();
+        }
+    }
+    else
+    {
+        root = new JsonObject();
+    }
+
+    static void Set(JsonObject obj, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) obj[key] = JsonValue.Create(value);
+    }
+
+    if (req.OpenAI is { } openAI)
+    {
+        var s = new JsonObject();
+        Set(s, "Endpoint", openAI.Endpoint);
+        Set(s, "ApiKey", openAI.ApiKey);
+        Set(s, "DeploymentName", openAI.DeploymentName);
+        root["AzureOpenAI"] = s;
+    }
+
+    if (req.Search is { } search)
+    {
+        var s = new JsonObject();
+        Set(s, "Endpoint", search.Endpoint);
+        Set(s, "ApiKey", search.ApiKey);
+        Set(s, "IndexName", search.IndexName);
+        Set(s, "ContentField", search.ContentField);
+        Set(s, "TitleField", search.TitleField);
+        Set(s, "KeyField", search.KeyField);
+        Set(s, "VectorField", search.VectorField);
+        root["AzureSearch"] = s;
+    }
+
+    if (req.Blob is { } blob)
+    {
+        var s = new JsonObject();
+        Set(s, "ConnectionString", blob.ConnectionString);
+        Set(s, "AccountName", blob.AccountName);
+        Set(s, "AccountKey", blob.AccountKey);
+        Set(s, "ContainerName", blob.ContainerName);
+        root["BlobStorage"] = s;
+    }
+
+    if (req.Cosmos is { } cosmos)
+    {
+        var s = new JsonObject();
+        Set(s, "Endpoint", cosmos.Endpoint);
+        Set(s, "AccountKey", cosmos.AccountKey);
+        Set(s, "DatabaseName", cosmos.DatabaseName);
+        Set(s, "ContainerName", cosmos.ContainerName);
+        Set(s, "PartitionKeyPath", cosmos.PartitionKeyPath);
+        Set(s, "PartitionKeyValue", cosmos.PartitionKeyValue);
+        root["CosmosDb"] = s;
+    }
+
+    try
+    {
+        var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(localSettingsPath, json);
+        // Reload in-process config — IOptionsMonitor.CurrentValue is updated immediately.
+        if (configuration is IConfigurationRoot configRoot)
+            configRoot.Reload();
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            detail: ex.Message,
+            title: "Could not write appsettings.local.json",
+            statusCode: 500);
+    }
+
+    return Results.Ok(new
+    {
+        message = "Settings saved. Chat and Search pick up the new values immediately. " +
+                  "Blob Storage and Cosmos DB require a server restart."
+    });
+});
 
 // POST /api/rag — enable or disable RAG
 app.MapPost("/api/rag", (SetRagRequest req, IRagService rag) =>
@@ -206,4 +314,21 @@ app.Run("http://+:8080");
 record SetRagRequest(bool Enabled);
 record ChatHistoryItem(string Role, string Content);
 record ChatApiRequest(string Message, IReadOnlyList<ChatHistoryItem>? History);
+
+// Settings update DTOs — all fields nullable; only non-empty values are written to appsettings.local.json.
+record OpenAISettingsUpdate(string? Endpoint, string? ApiKey, string? DeploymentName);
+record SearchSettingsUpdate(
+    string? Endpoint, string? ApiKey, string? IndexName,
+    string? ContentField, string? TitleField, string? KeyField, string? VectorField);
+record BlobSettingsUpdate(
+    string? ConnectionString, string? AccountName, string? AccountKey, string? ContainerName);
+record CosmosSettingsUpdate(
+    string? Endpoint, string? AccountKey,
+    string? DatabaseName, string? ContainerName,
+    string? PartitionKeyPath, string? PartitionKeyValue);
+record SettingsUpdateRequest(
+    OpenAISettingsUpdate? OpenAI,
+    SearchSettingsUpdate? Search,
+    BlobSettingsUpdate? Blob,
+    CosmosSettingsUpdate? Cosmos);
 

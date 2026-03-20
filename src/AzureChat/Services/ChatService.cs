@@ -15,25 +15,29 @@ namespace AzureChat.Services;
 /// </summary>
 public sealed class ChatService : IChatService
 {
-    private readonly AzureOpenAIOptions _options;
+    private readonly IOptionsMonitor<AzureOpenAIOptions> _monitor;
     private readonly ILogger<ChatService> _logger;
 
     // Lazily initialised — avoids URI exceptions when credentials are not yet configured.
     private ChatClient? _chatClient;
 
-    public ChatService(IOptions<AzureOpenAIOptions> options, ILogger<ChatService> logger)
+    public ChatService(IOptionsMonitor<AzureOpenAIOptions> options, ILogger<ChatService> logger)
     {
-        _options = options.Value;
+        _monitor = options;
         _logger = logger;
+        // Reset the cached client whenever configuration changes (e.g. after /api/settings save).
+        _monitor.OnChange(_ => _chatClient = null);
     }
+
+    private AzureOpenAIOptions Options => _monitor.CurrentValue;
 
     private ChatClient GetChatClient()
     {
         if (_chatClient is not null) return _chatClient;
         AzureOpenAIClient azureClient = new(
-            new Uri(_options.Endpoint),
-            new ApiKeyCredential(_options.ApiKey));
-        _chatClient = azureClient.GetChatClient(_options.DeploymentName);
+            new Uri(Options.Endpoint),
+            new ApiKeyCredential(Options.ApiKey));
+        _chatClient = azureClient.GetChatClient(Options.DeploymentName);
         return _chatClient;
     }
 
@@ -45,7 +49,7 @@ public sealed class ChatService : IChatService
         // Log active deployment so a wrong name is immediately visible in the console.
         _logger.LogInformation(
             "Chat completion → endpoint: '{Endpoint}', deployment: '{Deployment}'",
-            _options.Endpoint, _options.DeploymentName);
+            Options.Endpoint, Options.DeploymentName);
 
         var messages = new List<OpenAI.Chat.ChatMessage>(history.Count);
 
@@ -61,8 +65,8 @@ public sealed class ChatService : IChatService
 
         var completionOptions = new ChatCompletionOptions
         {
-            MaxOutputTokenCount = _options.MaxTokens,
-            Temperature = _options.Temperature,
+            MaxOutputTokenCount = Options.MaxTokens,
+            Temperature = Options.Temperature,
         };
 
         _logger.LogDebug("Requesting chat completion for {MessageCount} messages", messages.Count);
@@ -79,13 +83,12 @@ public sealed class ChatService : IChatService
         catch (ClientResultException ex) when (ex.Status == 404)
         {
             // Azure OpenAI returns 404 when the deployment name does not exist.
-            // Reset the cached client so a corrected deployment name (set via env var + restart)
-            // will create a fresh client on the next request.
+            // Reset the cached client so the corrected deployment name is picked up immediately.
             _chatClient = null;
 
             throw new AzureDeploymentNotFoundException(
-                _options.DeploymentName,
-                $"Azure OpenAI deployment '{_options.DeploymentName}' was not found (HTTP 404). " +
+                Options.DeploymentName,
+                $"Azure OpenAI deployment '{Options.DeploymentName}' was not found (HTTP 404). " +
                 "Check that the DeploymentName in appsettings.json exactly matches the deployment " +
                 "name shown in Azure portal → your Azure OpenAI resource → Deployments. " +
                 $"Set it via: AzureOpenAI__DeploymentName=<your-deployment-name>",

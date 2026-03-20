@@ -17,34 +17,38 @@ namespace AzureChat.Services;
 /// </summary>
 public sealed class SearchService : ISearchService
 {
-    private readonly AzureSearchOptions _options;
+    private readonly IOptionsMonitor<AzureSearchOptions> _monitor;
     private readonly ILogger<SearchService> _logger;
 
     // Lazily initialised — avoids URI exceptions when credentials are not yet configured.
     private SearchClient? _client;
 
-    public SearchService(IOptions<AzureSearchOptions> options, ILogger<SearchService> logger)
+    public SearchService(IOptionsMonitor<AzureSearchOptions> options, ILogger<SearchService> logger)
     {
-        _options = options.Value;
+        _monitor = options;
         _logger = logger;
+        // Reset the cached client whenever configuration changes (e.g. after /api/settings save).
+        _monitor.OnChange(_ => _client = null);
     }
+
+    private AzureSearchOptions Options => _monitor.CurrentValue;
 
     private SearchClient GetClient() =>
         _client ??= new SearchClient(
-            new Uri(_options.Endpoint),
-            _options.IndexName,
-            new AzureKeyCredential(_options.ApiKey));
+            new Uri(Options.Endpoint),
+            Options.IndexName,
+            new AzureKeyCredential(Options.ApiKey));
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<IndexField>> GetIndexFieldsAsync(
         CancellationToken cancellationToken = default)
     {
         var indexClient = new SearchIndexClient(
-            new Uri(_options.Endpoint),
-            new AzureKeyCredential(_options.ApiKey));
+            new Uri(Options.Endpoint),
+            new AzureKeyCredential(Options.ApiKey));
 
         Response<SearchIndex> response =
-            await indexClient.GetIndexAsync(_options.IndexName, cancellationToken);
+            await indexClient.GetIndexAsync(Options.IndexName, cancellationToken);
 
         var rawFields = response.Value.Fields.Select(f => new IndexField(
             name:          f.Name,
@@ -54,7 +58,7 @@ public sealed class SearchService : ISearchService
             .ToList();
 
         _logger.LogDebug(
-            "Index '{Index}' has {Count} field(s).", _options.IndexName, rawFields.Count);
+            "Index '{Index}' has {Count} field(s).", Options.IndexName, rawFields.Count);
 
         return IndexFieldRecommender.Annotate(rawFields);
     }
@@ -112,13 +116,13 @@ public sealed class SearchService : ISearchService
         // Log active field configuration so stale settings are immediately visible in the console.
         _logger.LogInformation(
             "Search → index: '{Index}', KeyField: '{Key}', ContentField: '{Content}', TitleField: '{Title}'",
-            _options.IndexName, _options.KeyField, _options.ContentField, _options.TitleField);
+            Options.IndexName, Options.KeyField, Options.ContentField, Options.TitleField);
 
         // Do NOT populate searchOptions.Select — omitting $select tells Azure AI Search to
         // return all retrievable fields, which works with any index schema without any 400 errors.
         var searchOptions = new SearchOptions
         {
-            Size = _options.TopK,
+            Size = Options.TopK,
             IncludeTotalCount = false,
         };
 
@@ -130,9 +134,9 @@ public sealed class SearchService : ISearchService
         {
             // Use configured field names with automatic fallback aliases so extraction
             // works even when appsettings.json hasn't been updated yet.
-            string id         = TryExtractField(hit.Document, _options.KeyField,     KeyAliases);
-            string title      = TryExtractField(hit.Document, _options.TitleField,   TitleAliases);
-            string content    = TryExtractField(hit.Document, _options.ContentField, ContentAliases);
+            string id         = TryExtractField(hit.Document, Options.KeyField,     KeyAliases);
+            string title      = TryExtractField(hit.Document, Options.TitleField,   TitleAliases);
+            string content    = TryExtractField(hit.Document, Options.ContentField, ContentAliases);
             string sourcePath = TryExtractField(hit.Document, string.Empty,          SourcePathAliases);
             double score      = hit.Score ?? 0;
 
