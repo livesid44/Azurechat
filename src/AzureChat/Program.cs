@@ -213,6 +213,29 @@ app.MapPost("/api/rag", (SetRagRequest req, IRagService rag) =>
     return Results.Ok(new { enabled = rag.IsEnabled });
 });
 
+// POST /api/chat/ping — minimal test call to Azure OpenAI; returns diagnostic result without throwing
+app.MapPost("/api/chat/ping", async (IChatService chat, CancellationToken ct) =>
+{
+    ChatPingResult result = await chat.PingAsync(ct);
+    return result.Ok
+        ? Results.Ok(new
+        {
+            ok = true,
+            authType = result.AuthType,
+            endpoint = result.Endpoint,
+            deploymentName = result.DeploymentName,
+            message = result.Message,
+        })
+        : Results.Json(new
+        {
+            ok = false,
+            authType = result.AuthType,
+            endpoint = result.Endpoint,
+            deploymentName = result.DeploymentName,
+            message = result.Message,
+        }, statusCode: 400);
+});
+
 // POST /api/chat — send a message, get an AI response (with optional RAG)
 app.MapPost("/api/chat", async (ChatApiRequest req, IRagService rag, CancellationToken ct) =>
 {

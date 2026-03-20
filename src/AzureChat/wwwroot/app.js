@@ -124,6 +124,13 @@ function renderConfig(cfg) {
     ${row('Endpoint', cfg.openAI.endpoint, cfg.openAI.configured)}
     ${row('Deployment', cfg.openAI.deploymentName)}
     ${row('Auth type', cfg.openAI.authType || 'ApiKey')}
+    <div class="mt-1 mb-2">
+      <button class="btn btn-sm btn-outline-primary w-100" id="pingBtn"
+              onclick="testConnection()" ${cfg.openAI.configured ? '' : 'disabled'}>
+        <i class="bi bi-plug me-1"></i>Test Azure OpenAI connection
+      </button>
+      <div id="pingResult" class="mt-1"></div>
+    </div>
     <hr class="my-2"/>
 
     <h6 class="text-uppercase text-muted mb-2">Azure AI Search</h6>
@@ -323,6 +330,49 @@ async function saveSettings() {
   } catch (err) {
     if (fb) fb.innerHTML = `<div class="alert alert-danger py-1 small mt-1">
       ❌ ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// ── Azure OpenAI connection test ───────────────────────────────────────────
+async function testConnection() {
+  const btn = document.getElementById('pingBtn');
+  const resultDiv = document.getElementById('pingResult');
+  if (!btn || !resultDiv) return;
+
+  const origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Testing…';
+  resultDiv.innerHTML = '';
+
+  try {
+    const resp = await apiFetch('/api/chat/ping', { method: 'POST' });
+    const data = await resp.json();
+
+    if (data.ok) {
+      resultDiv.innerHTML = `
+        <div class="alert alert-success py-2 small mt-1">
+          <strong>✅ Connection OK</strong><br>
+          AuthType: <code>${escapeHtml(data.authType)}</code> &nbsp;
+          Deployment: <code>${escapeHtml(data.deploymentName)}</code><br>
+          ${escapeHtml(data.message)}
+        </div>`;
+    } else {
+      resultDiv.innerHTML = `
+        <div class="alert alert-danger py-2 small mt-1">
+          <strong>❌ Connection failed</strong><br>
+          AuthType: <code>${escapeHtml(data.authType || '—')}</code> &nbsp;
+          Deployment: <code>${escapeHtml(data.deploymentName || '—')}</code><br>
+          <span class="text-break">${escapeHtml(data.message || data.detail || 'Unknown error')}</span>
+        </div>`;
+    }
+  } catch (err) {
+    resultDiv.innerHTML = `
+      <div class="alert alert-danger py-2 small mt-1">
+        ❌ Network error: ${escapeHtml(err.message)}
+      </div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
   }
 }
 

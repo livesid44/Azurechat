@@ -15,10 +15,13 @@ namespace AzureChat.Services;
 /// (keyword + vector) search when a vector field is configured, otherwise
 /// falls back to full-text search only.
 /// </summary>
-public sealed class SearchService : ISearchService
+public sealed class SearchService : ISearchService, IDisposable
 {
     private readonly IOptionsMonitor<AzureSearchOptions> _monitor;
     private readonly ILogger<SearchService> _logger;
+    // Keep the IDisposable returned by OnChange alive for the service lifetime so the
+    // callback is never garbage-collected and _client is always reset on config change.
+    private readonly IDisposable? _changeToken;
 
     // Lazily initialised — avoids URI exceptions when credentials are not yet configured.
     private SearchClient? _client;
@@ -28,8 +31,10 @@ public sealed class SearchService : ISearchService
         _monitor = options;
         _logger = logger;
         // Reset the cached client whenever configuration changes (e.g. after /api/settings save).
-        _monitor.OnChange(_ => _client = null);
+        _changeToken = _monitor.OnChange(_ => _client = null);
     }
+
+    public void Dispose() => _changeToken?.Dispose();
 
     private AzureSearchOptions Options => _monitor.CurrentValue;
 
