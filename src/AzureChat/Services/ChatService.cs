@@ -78,8 +78,13 @@ public sealed class ChatService : IChatService
         }
         catch (ClientResultException ex) when (ex.Status == 404)
         {
-            // Azure OpenAI returns 404 when the deployment name doesn't exist.
-            throw new InvalidOperationException(
+            // Azure OpenAI returns 404 when the deployment name does not exist.
+            // Reset the cached client so a corrected deployment name (set via env var + restart)
+            // will create a fresh client on the next request.
+            _chatClient = null;
+
+            throw new AzureDeploymentNotFoundException(
+                _options.DeploymentName,
                 $"Azure OpenAI deployment '{_options.DeploymentName}' was not found (HTTP 404). " +
                 "Check that the DeploymentName in appsettings.json exactly matches the deployment " +
                 "name shown in Azure portal → your Azure OpenAI resource → Deployments. " +

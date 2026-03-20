@@ -124,14 +124,16 @@ app.MapPost("/api/chat", async (ChatApiRequest req, IRagService rag, Cancellatio
     catch (Exception ex)
     {
         // Distinguish misconfiguration errors (4xx) from true server failures (5xx).
-        // DeploymentNotFound is a user-fixable config problem → 400 Bad Request.
-        bool isDeploymentNotFound =
-            ex.Message.Contains("DeploymentNotFound", StringComparison.OrdinalIgnoreCase) ||
-            (ex.InnerException?.Message.Contains("DeploymentNotFound", StringComparison.OrdinalIgnoreCase) ?? false);
+        // AzureDeploymentNotFoundException is a user-fixable config problem → 400 Bad Request.
+        if (ex is AzureDeploymentNotFoundException dnf)
+        {
+            return Results.Problem(
+                detail: dnf.Message,
+                title: $"Deployment '{dnf.DeploymentName}' not found — update DeploymentName in appsettings.json",
+                statusCode: 400);
+        }
 
-        return isDeploymentNotFound
-            ? Results.Problem(detail: ex.Message, title: "Deployment not found — check DeploymentName in appsettings.json", statusCode: 400)
-            : Results.Problem(detail: ex.Message, title: "Chat request failed", statusCode: 500);
+        return Results.Problem(detail: ex.Message, title: "Chat request failed", statusCode: 500);
     }
 });
 

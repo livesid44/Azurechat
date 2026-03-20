@@ -217,7 +217,23 @@ async function sendMessage() {
       body: JSON.stringify({ message, history: conversationHistory }),
     });
 
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+    if (!resp.ok) {
+      const body = await resp.text();
+      // 400 = user-fixable configuration error (e.g. wrong deployment name)
+      if (resp.status === 400) {
+        let parsed;
+        try { parsed = JSON.parse(body); } catch { parsed = null; }
+        const detail = parsed?.detail ?? parsed?.title ?? body;
+        thinkingEl.remove();
+        appendSystemMessage(
+          `⚙️ Configuration error:\n${detail}\n\nOpen the ⚙ Config panel to verify your Azure OpenAI Deployment name.`,
+          'warning');
+        setBusy(false);
+        input.focus();
+        return;
+      }
+      throw new Error(`HTTP ${resp.status}: ${body}`);
+    }
 
     const result = await resp.json();
 
