@@ -218,7 +218,122 @@ In **GitHub Codespaces / VS Code Dev Containers**, the port is automatically for
 | `GET  /api/rag` | RAG enabled/disabled status |
 | `POST /api/rag` | Toggle RAG (`{"enabled": true/false}`) |
 | `POST /api/chat` | Send a message (`{"message":"…","history":[…]}`) |
+| `POST /api/settings` | Save credentials (writes `appsettings.local.json`, hot-reloads) |
+| `GET  /api/search/fields` | Introspect live index — discover field names |
+| `GET  /api/blob/download?path=…` | Generate SAS URL and redirect to blob file |
 | `POST /api/ingest` | Run Blob → Cosmos DB ingestion pipeline |
+
+> **Interactive API docs with copy-able cURL commands** are available at **`/docs.html`** in the running app.
+
+### cURL quick-start
+
+Replace `http://localhost:8080` with your actual base URL (e.g. a Codespaces forwarded port URL).
+
+#### 1. Check configuration
+
+```bash
+curl -s http://localhost:8080/api/config | python3 -m json.tool
+```
+
+#### 2. Discover your index field names
+
+```bash
+curl -s http://localhost:8080/api/search/fields | python3 -m json.tool
+```
+
+#### 3. Save credentials (no restart needed for OpenAI + Search)
+
+```bash
+curl -s -X POST http://localhost:8080/api/settings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "openAI": {
+      "endpoint":       "https://YOUR-RESOURCE.openai.azure.com/",
+      "apiKey":         "YOUR-OPENAI-KEY",
+      "deploymentName": "gpt-4o"
+    },
+    "search": {
+      "endpoint":     "https://YOUR-SEARCH.search.windows.net",
+      "apiKey":       "YOUR-SEARCH-KEY",
+      "indexName":    "rag-1771648004180",
+      "contentField": "chunk",
+      "titleField":   "title",
+      "keyField":     "id",
+      "vectorField":  "contentVector"
+    }
+  }' | python3 -m json.tool
+```
+
+#### 4. Enable RAG
+
+```bash
+curl -s -X POST http://localhost:8080/api/rag \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+```
+
+#### 5. Send a chat message
+
+```bash
+curl -s -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is RAG?"}' | python3 -m json.tool
+```
+
+#### 6. Multi-turn conversation
+
+```bash
+curl -s -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Can you elaborate?",
+    "history": [
+      { "role": "user",      "content": "What is RAG?" },
+      { "role": "assistant", "content": "RAG stands for Retrieval-Augmented Generation…" }
+    ]
+  }' | python3 -m json.tool
+```
+
+#### 7. Run ingestion (Blob → Cosmos DB)
+
+```bash
+curl -s -X POST http://localhost:8080/api/ingest | python3 -m json.tool
+```
+
+#### 8. Download a source file referenced in a chat response
+
+```bash
+# The sourcePath value comes from the "sources" array in the /api/chat response
+curl -s -L "http://localhost:8080/api/blob/download?path=dataingestion/report.pdf" -o report.pdf
+```
+
+### Update only one field (e.g. fix the deployment name)
+
+```bash
+curl -s -X POST http://localhost:8080/api/settings \
+  -H "Content-Type: application/json" \
+  -d '{"openAI": {"deploymentName": "gpt-4o-mini"}}' | python3 -m json.tool
+```
+
+### Cosmos DB partition key mismatch fix
+
+If ingestion fails with a partition key error, set `partitionKeyPath` and `partitionKeyValue`
+to match your existing container:
+
+```bash
+curl -s -X POST http://localhost:8080/api/settings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cosmos": {
+      "endpoint":          "https://YOUR-COSMOS.documents.azure.com:443/",
+      "accountKey":        "YOUR-COSMOS-KEY",
+      "databaseName":      "AzureChat",
+      "containerName":     "Containerid1",
+      "partitionKeyPath":  "/vendorId",
+      "partitionKeyValue": "default"
+    }
+  }' | python3 -m json.tool
+```
 
 ## Running the tests
 

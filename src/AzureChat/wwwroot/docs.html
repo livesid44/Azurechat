@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Docs — Azure AI Assistant</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <style>
+    body { background: #0d1117; color: #e6edf3; }
+    .navbar { background: #161b22 !important; border-bottom: 1px solid #30363d; }
+    pre.curl-block {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      font-size: .82rem;
+      line-height: 1.55;
+      overflow-x: auto;
+      white-space: pre;
+      position: relative;
+    }
+    .copy-btn {
+      position: absolute;
+      top: .5rem;
+      right: .5rem;
+      font-size: .7rem;
+    }
+    .endpoint-card { border: 1px solid #30363d; border-radius: 10px; background: #161b22; }
+    .method-badge { font-size: .7rem; min-width: 54px; text-align: center; }
+    .method-GET  { background: #1f6feb; }
+    .method-POST { background: #238636; }
+    h3.ep-title  { font-size: 1rem; font-family: monospace; color: #58a6ff; margin: 0; }
+    .section-head { border-bottom: 1px solid #30363d; padding-bottom: .4rem; margin-bottom: 1rem; }
+    code { color: #e3b341; background: transparent; }
+    .base-url-box { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: .4rem .75rem; font-family: monospace; font-size: .85rem; color: #58a6ff; }
+    .response-example { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: .75rem 1rem; font-size: .78rem; font-family: monospace; overflow-x: auto; white-space: pre; }
+    a.back-link { color: #58a6ff; text-decoration: none; }
+    a.back-link:hover { text-decoration: underline; }
+    .toc-link { color: #8b949e; text-decoration: none; font-size: .85rem; }
+    .toc-link:hover { color: #58a6ff; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Navbar ─────────────────────────────────────────────────────── -->
+  <nav class="navbar px-4 py-2 d-flex align-items-center gap-3">
+    <a href="/" class="back-link fw-semibold">
+      <i class="bi bi-arrow-left me-1"></i>Back to chat
+    </a>
+    <span class="fw-bold text-white">
+      <i class="bi bi-terminal me-2 text-primary"></i>API Reference &amp; cURL Examples
+    </span>
+    <span class="ms-auto small text-secondary">Azure AI Assistant</span>
+  </nav>
+
+  <div class="container-xl py-4 px-3 px-md-5">
+
+    <!-- Base URL callout -->
+    <div class="alert alert-info d-flex align-items-start gap-3 mb-4" role="alert">
+      <i class="bi bi-info-circle-fill fs-5 mt-1 flex-shrink-0"></i>
+      <div>
+        <strong>Your API base URL:</strong><br />
+        <span class="base-url-box mt-1 d-inline-block" id="baseUrlDisplay">detecting…</span>
+        <div class="mt-2 small text-muted">
+          All cURL examples below use this URL. If you're in a GitHub Codespace, the forwarded
+          port URL is shown automatically.
+        </div>
+      </div>
+    </div>
+
+    <!-- Table of contents -->
+    <div class="mb-4">
+      <p class="text-muted small mb-1 fw-semibold">ENDPOINTS</p>
+      <div class="d-flex flex-wrap gap-2" id="toc"></div>
+    </div>
+
+    <!-- Endpoint sections rendered by JS -->
+    <div id="docsBody"></div>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // ── Detect base URL ────────────────────────────────────────────────
+    const BASE = window.location.origin;
+    document.getElementById('baseUrlDisplay').textContent = BASE;
+
+    // ── Copy to clipboard helper ───────────────────────────────────────
+    function copyCmd(id) {
+      const text = document.getElementById(id).textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector(`[onclick="copyCmd('${id}')"]`);
+        if (!btn) return;
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied';
+        setTimeout(() => { btn.innerHTML = orig; }, 1800);
+      });
+    }
+
+    // ── Endpoint definitions ───────────────────────────────────────────
+    const endpoints = [
+      {
+        id: 'get-config',
+        method: 'GET',
+        path: '/api/config',
+        title: 'Get current configuration',
+        desc: 'Returns the active configuration. <strong>API keys are never returned</strong> — only whether each service is configured.',
+        curl: () => `curl -s ${BASE}/api/config | python3 -m json.tool`,
+        response: `{
+  "openAI":   { "endpoint": "https://…openai.azure.com/", "deploymentName": "gpt-4o", "configured": true },
+  "search":   { "endpoint": "https://…search.windows.net", "indexName": "rag-…", "configured": true },
+  "rag":      { "enabled": false },
+  "blob":     { "accountName": "mystorage", "containerName": "dataingestion", "configured": true },
+  "cosmos":   { "endpoint": "https://…documents.azure.com:443/", "databaseName": "AzureChat", "configured": true }
+}`,
+      },
+      {
+        id: 'get-rag',
+        method: 'GET',
+        path: '/api/rag',
+        title: 'Get RAG toggle status',
+        desc: 'Returns whether Retrieval-Augmented Generation is currently enabled.',
+        curl: () => `curl -s ${BASE}/api/rag`,
+        response: `{ "enabled": false }`,
+      },
+      {
+        id: 'post-rag',
+        method: 'POST',
+        path: '/api/rag',
+        title: 'Enable / disable RAG',
+        desc: 'Toggles RAG on or off. When enabled, every chat message first queries Azure AI Search for relevant documents.',
+        curl: () => `# Enable RAG
+curl -s -X POST ${BASE}/api/rag \\
+  -H "Content-Type: application/json" \\
+  -d '{"enabled": true}'
+
+# Disable RAG
+curl -s -X POST ${BASE}/api/rag \\
+  -H "Content-Type: application/json" \\
+  -d '{"enabled": false}'`,
+        response: `{ "enabled": true }`,
+      },
+      {
+        id: 'post-chat',
+        method: 'POST',
+        path: '/api/chat',
+        title: 'Send a chat message',
+        desc: `Send a user message and receive an AI response. Optionally pass the conversation
+<code>history</code> array (role = <code>"user"</code> or <code>"assistant"</code>) for multi-turn conversation.
+When RAG is enabled the response includes a <code>sources</code> array.`,
+        curl: () => `# Simple single-turn question
+curl -s -X POST ${BASE}/api/chat \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "message": "What is RAG?"
+  }' | python3 -m json.tool
+
+# Multi-turn with conversation history
+curl -s -X POST ${BASE}/api/chat \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "message": "Can you elaborate on the second point?",
+    "history": [
+      { "role": "user",      "content": "What is RAG?" },
+      { "role": "assistant", "content": "RAG stands for Retrieval-Augmented Generation…" }
+    ]
+  }' | python3 -m json.tool`,
+        response: `{
+  "answer": "RAG (Retrieval-Augmented Generation) is a technique that combines…",
+  "sources": [
+    { "title": "intro-to-rag.pdf", "score": 0.94, "sourcePath": "dataingestion/intro-to-rag.pdf" }
+  ]
+}`,
+      },
+      {
+        id: 'post-settings',
+        method: 'POST',
+        path: '/api/settings',
+        title: 'Save credentials / settings',
+        desc: `Writes credentials to <code>appsettings.local.json</code> (gitignored) and hot-reloads config.
+Only non-empty fields are written. All fields are optional — include only the sections you want to update.
+<br><br>
+<strong>⚡ Azure OpenAI and Search</strong> values take effect immediately (no restart needed).
+<strong>Blob Storage and Cosmos DB</strong> require a server restart.`,
+        curl: () => `# Save all credentials at once (replace values with yours)
+curl -s -X POST ${BASE}/api/settings \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "openAI": {
+      "endpoint":       "https://YOUR-RESOURCE.openai.azure.com/",
+      "apiKey":         "YOUR-OPENAI-KEY",
+      "deploymentName": "gpt-4o"
+    },
+    "search": {
+      "endpoint":     "https://YOUR-SEARCH.search.windows.net",
+      "apiKey":       "YOUR-SEARCH-KEY",
+      "indexName":    "rag-1771648004180",
+      "contentField": "chunk",
+      "titleField":   "title",
+      "keyField":     "id",
+      "vectorField":  "contentVector"
+    },
+    "blob": {
+      "connectionString": "DefaultEndpointsProtocol=https;AccountName=…",
+      "containerName":    "dataingestion"
+    },
+    "cosmos": {
+      "endpoint":          "https://YOUR-COSMOS.documents.azure.com:443/",
+      "accountKey":        "YOUR-COSMOS-KEY",
+      "databaseName":      "AzureChat",
+      "containerName":     "Containerid1",
+      "partitionKeyPath":  "/vendorId",
+      "partitionKeyValue": "default"
+    }
+  }' | python3 -m json.tool
+
+# Update only the OpenAI deployment name (leave everything else unchanged)
+curl -s -X POST ${BASE}/api/settings \\
+  -H "Content-Type: application/json" \\
+  -d '{"openAI": {"deploymentName": "gpt-4o-mini"}}' | python3 -m json.tool`,
+        response: `{
+  "message": "Settings saved. Chat and Search pick up the new values immediately. Blob Storage and Cosmos DB require a server restart."
+}`,
+      },
+      {
+        id: 'get-search-fields',
+        method: 'GET',
+        path: '/api/search/fields',
+        title: 'Discover index fields',
+        desc: `Introspects the live Azure AI Search index and returns all field names with type information
+and a heuristic <code>suggestedRole</code> (ContentField / TitleField / KeyField / VectorField).
+Use this to find the correct values for <code>contentField</code>, <code>titleField</code>, etc.`,
+        curl: () => `curl -s ${BASE}/api/search/fields | python3 -m json.tool`,
+        response: `{
+  "fields": [
+    { "name": "id",            "type": "Edm.String",         "isSearchable": false, "isRetrievable": true,  "suggestedRole": "KeyField" },
+    { "name": "chunk",         "type": "Edm.String",         "isSearchable": true,  "isRetrievable": true,  "suggestedRole": "ContentField" },
+    { "name": "title",         "type": "Edm.String",         "isSearchable": true,  "isRetrievable": true,  "suggestedRole": "TitleField" },
+    { "name": "contentVector", "type": "Collection(Edm.Single)", "isSearchable": true, "isRetrievable": false, "suggestedRole": "VectorField" }
+  ]
+}`,
+      },
+      {
+        id: 'get-blob-download',
+        method: 'GET',
+        path: '/api/blob/download?path=…',
+        title: 'Download a source blob file',
+        desc: `Generates a short-lived (1-hour) SAS download URL for a blob and issues a 302 redirect.
+The <code>path</code> parameter is the <code>sourcePath</code> value returned in <code>/api/chat</code> sources.
+Use <code>-L</code> with curl to follow the redirect and download the file.`,
+        curl: () => `# Get a download URL (follow redirect, save file)
+curl -s -L "${BASE}/api/blob/download?path=dataingestion/Sharepoint%20Data/report.pdf" \\
+  -o report.pdf
+
+# Just see the redirect URL without downloading
+curl -s -I "${BASE}/api/blob/download?path=dataingestion/report.pdf" \\
+  | grep -i location`,
+        response: `HTTP/1.1 302 Found
+Location: https://mystorage.blob.core.windows.net/dataingestion/report.pdf?sv=2023-01-03&se=…&sp=r&spr=https&sig=…`,
+      },
+      {
+        id: 'post-ingest',
+        method: 'POST',
+        path: '/api/ingest',
+        title: 'Run Blob → Cosmos DB ingestion',
+        desc: `Reads all supported text files from the configured Blob Storage container, splits them into
+chunks, and upserts them as JSON documents into Cosmos DB ready for RAG indexing.
+Returns a summary with the number of succeeded/failed documents.`,
+        curl: () => `curl -s -X POST ${BASE}/api/ingest | python3 -m json.tool`,
+        response: `{
+  "succeeded": 42,
+  "failed":    0,
+  "errors":    []
+}`,
+      },
+    ];
+
+    // ── Render ─────────────────────────────────────────────────────────
+    const methodColor = { GET: 'method-GET', POST: 'method-POST' };
+
+    const toc  = document.getElementById('toc');
+    const body = document.getElementById('docsBody');
+    let cmdIdx = 0;
+
+    endpoints.forEach(ep => {
+      // TOC entry
+      const a = document.createElement('a');
+      a.href = `#${ep.id}`;
+      a.className = 'toc-link';
+      a.innerHTML =
+        `<span class="badge ${methodColor[ep.method]} method-badge me-1">${ep.method}</span>${ep.path}`;
+      toc.appendChild(a);
+
+      // Card
+      const curlId = `curl-${cmdIdx++}`;
+      const card = document.createElement('div');
+      card.className = 'endpoint-card p-3 mb-4';
+      card.id = ep.id;
+      card.innerHTML = `
+        <div class="d-flex align-items-center gap-2 mb-2 section-head">
+          <span class="badge ${methodColor[ep.method]} method-badge">${ep.method}</span>
+          <h3 class="ep-title">${ep.path}</h3>
+        </div>
+        <p class="small text-secondary mb-3">${ep.desc}</p>
+
+        <p class="text-muted small fw-semibold mb-1">cURL EXAMPLE</p>
+        <div style="position:relative;">
+          <pre class="curl-block" id="${curlId}"></pre>
+          <button class="btn btn-sm btn-outline-secondary copy-btn" onclick="copyCmd('${curlId}')">
+            <i class="bi bi-clipboard me-1"></i>Copy
+          </button>
+        </div>
+
+        ${ep.response ? `
+        <p class="text-muted small fw-semibold mb-1 mt-3">EXAMPLE RESPONSE</p>
+        <div class="response-example">${escHtml(ep.response)}</div>
+        ` : ''}
+      `;
+      // Fill cURL text (not via innerHTML to avoid XSS)
+      card.querySelector(`#${curlId}`).textContent = ep.curl();
+      body.appendChild(card);
+    });
+
+    function escHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── Quick-test panel ───────────────────────────────────────────────
+    // Append a live test section at the bottom
+    const testSection = document.createElement('div');
+    testSection.innerHTML = `
+      <hr class="border-secondary my-4" />
+      <h4 class="mb-3"><i class="bi bi-play-circle me-2 text-success"></i>Quick connection test</h4>
+      <p class="small text-muted mb-3">
+        Click the buttons below to fire the requests directly from your browser and see the raw JSON response.
+      </p>
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <button class="btn btn-sm btn-outline-info" onclick="liveTest('/api/config','GET')">
+          <i class="bi bi-play-fill me-1"></i>GET /api/config
+        </button>
+        <button class="btn btn-sm btn-outline-info" onclick="liveTest('/api/rag','GET')">
+          <i class="bi bi-play-fill me-1"></i>GET /api/rag
+        </button>
+        <button class="btn btn-sm btn-outline-success" onclick="liveTestChat()">
+          <i class="bi bi-play-fill me-1"></i>POST /api/chat (ping)
+        </button>
+        <button class="btn btn-sm btn-outline-warning" onclick="liveTest('/api/search/fields','GET')">
+          <i class="bi bi-play-fill me-1"></i>GET /api/search/fields
+        </button>
+      </div>
+      <pre class="curl-block" id="liveOutput" style="min-height:3rem;color:#7ee787;">Click a button above to see the response here…</pre>
+    `;
+    body.appendChild(testSection);
+
+    async function liveTest(path, method, body2) {
+      const out = document.getElementById('liveOutput');
+      out.textContent = 'Sending…';
+      try {
+        const res = await fetch(BASE + path, {
+          method,
+          headers: body2 ? { 'Content-Type': 'application/json' } : undefined,
+          body: body2 ? JSON.stringify(body2) : undefined,
+        });
+        const text = await res.text();
+        let pretty = text;
+        try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch {}
+        out.textContent = `HTTP ${res.status} ${res.statusText}\n\n${pretty}`;
+        out.style.color = res.ok ? '#7ee787' : '#f85149';
+      } catch (e) {
+        out.textContent = `Network error: ${e.message}`;
+        out.style.color = '#f85149';
+      }
+    }
+
+    function liveTestChat() {
+      liveTest('/api/chat', 'POST', { message: 'Hello, are you working?' });
+    }
+
+    window.liveTest = liveTest;
+    window.liveTestChat = liveTestChat;
+  </script>
+</body>
+</html>
